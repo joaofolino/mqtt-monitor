@@ -1,7 +1,23 @@
-
 #!/bin/sh
 set -e
-pip3 install paho-mqtt psutil openpyxl
-systemctl enable monitor.service
-systemctl start monitor.service
+
+# Create mqtt-monitor user
+if ! id mqtt-monitor >/dev/null 2>&1; then
+    useradd -r -s /bin/false mqtt-monitor
+    usermod -aG disk mqtt-monitor
+fi
+
+# Set permissions
+chown mqtt-monitor:disk /var/log/mqtt-monitor.log 2>/dev/null || touch /var/log/mqtt-monitor.log
+chmod 664 /var/log/mqtt-monitor.log
+chown mqtt-monitor:disk /etc/mqtt-monitor/mqtt-monitor.conf
+chmod 660 /etc/mqtt-monitor/mqtt-monitor.conf
+
+# Install Python dependencies
+pip3 install paho-mqtt psutil openpyxl requests
+
+# Enable and start service
+systemctl enable mqtt-monitor.service
+systemctl start mqtt-monitor.service
+
 exit 0

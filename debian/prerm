@@ -1,5 +1,7 @@
 #!/bin/sh
 set -e
-systemctl stop monitor.service
-systemctl disable monitor.service
+
+systemctl stop mqtt-monitor.service
+systemctl disable mqtt-monitor.service
+
 exit 0

@@ -1,8 +1,23 @@
 #!/bin/sh
-#set -e
-#if [ "$1" = "purge" ]; then
-#    echo "Removing dependencies..."
-#    apt-get purge -y smartmontools python3-pip python3-psutil python3-paho-mqtt python3-openpyxl
-#    apt-get autoremove -y
-#fi
-#exit 0
+set -e
+
+if [ "$1" = "purge" ]; then
+    echo "Removing mqtt-monitor specific files..."
+    rm -f /var/log/mqtt-monitor.log
+    rm -rf /etc/mqtt-monitor
+
+    # Remove mqtt-monitor user if no other packages need it
+    if ! dpkg -l | grep -q mqtt-monitor; then
+        userdel mqtt-monitor 2>/dev/null || true
+    fi
+
+    # Remove dependencies only if not required by other packages
+    for pkg in smartmontools python3-pip python3-psutil python3-paho-mqtt python3-requests python3-openpyxl; do
+        if dpkg -l "$pkg" >/dev/null 2>&1 && ! apt rdepends "$pkg" | grep -q "Depends:.*"; then
+            apt-get purge -y "$pkg" || true
+        fi
+    done
+    apt-get autoremove -y || true
+fi
+
+exit 0

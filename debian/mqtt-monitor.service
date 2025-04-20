@@ -1,11 +1,11 @@
 [Unit]
-Description=Monitor SMART data, RAID, and system metrics
+Description=Monitor SMART data, RAID, and system metrics via MQTT
 After=network.target
 
 [Service]
 ExecStart=/usr/bin/python3 /usr/bin/mqtt-monitor.py
 Restart=always
-User=root
+User=mqtt-monitor
 Group=disk
 Environment=PYTHONUNBUFFERED=1
 

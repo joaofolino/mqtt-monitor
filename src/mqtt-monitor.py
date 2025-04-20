@@ -7,12 +7,14 @@ import paho.mqtt.client as mqtt
 import psutil
 import configparser
 import smtplib
+import requests
 from email.mime.text import MIMEText
 from datetime import datetime
+import logging
 
 # Load configuration
 config = configparser.ConfigParser()
-config.read('/etc/monitor/monitor.conf')
+config.read('/etc/mqtt-monitor/mqtt-monitor.conf')
 
 # General configs
 ENABLE_EMAIL = config.getboolean('monitor', 'enable_email')
@@ -23,10 +25,11 @@ SMTP_SERVER = config['monitor']['smtp_server']
 SMTP_PORT = config.getint('monitor', 'smtp_port')
 SMTP_USER = config['monitor']['smtp_user']
 SMTP_PASS = config['monitor']['smtp_pass']
+PACKAGE_VERSION = config['monitor']['package_version']
 
 # MQTT configs
 BROKER = config['mqtt']['broker']
-PORT = config.getint('mqtt','port')
+PORT = config.getint('mqtt', 'port')
 MQTT_USER = config['mqtt']['mqtt_user']
 MQTT_PASS = config['mqtt']['mqtt_pass']
 SELF_NAME = config['mqtt']['self_name']
@@ -35,17 +38,21 @@ SELF_NAME = config['mqtt']['self_name']
 SMART_INTERVAL = config.getint('internals', 'smart_interval')
 TOPIC_PREFIX = config['internals']['topic_prefix']
 LOG_DIR = config['internals']['log_dir']
-LOG_FILE = config['internals']['log_file')
+LOG_FILE = config['internals']['log_file']
 DEVICES = config['internals']['devices'].split(',')
 RAID_ARRAYS = config['internals']['raid_arrays'].split(',')
 MDSTAT_PATH = config['internals']['mdstat_path']
 CPU_TEMP_PATH = config['internals']['cpu_temp_path']
 DISK_USAGE_MOUNTS = config['internals']['disk_usage_mounts'].split(',')
 MAX_IO_RATE = config.getfloat('internals', 'max_io_rate')
-MD1_USAGE_THRESHOLD = config.getfloat('internals','md1_usage_threshold')
+MD1_USAGE_THRESHOLD = config.getfloat('internals', 'md1_usage_threshold')
 MD1_WRITE_SPIKE_THRESHOLD = config.getfloat('internals', 'md1_write_spike_threshold')
 SLEEP_INTERVAL = config.getfloat('internals', 'sleep_interval')
 ERROR_SLEEP = config.getfloat('internals', 'error_sleep')
+
+# Logging setup
+logging.basicConfig(filename=LOG_FILE, level=getattr(logging, LOG_LEVEL), format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
 
 disk_cache = {}
 prev_io = {}
@@ -56,12 +63,7 @@ client.username_pw_set(MQTT_USER, MQTT_PASS)
 client.connect(BROKER, PORT, 60)
 
 def log(message, level="INFO"):
-    if level == "DEBUG" and LOG_LEVEL != "DEBUG":
-        return
-    if not os.path.exists(LOG_DIR):
-        os.makedirs(LOG_DIR)
-    with open(LOG_FILE, "a") as f:
-        f.write(f"{datetime.now()} [{level}] {message}\n")
+    getattr(logger, level.lower())(message)
 
 def send_alert(subject, body):
     if not ENABLE_EMAIL:
@@ -203,7 +205,30 @@ def get_usage(mount):
         log(f"Error getting usage for {mount}: {e}", "ERROR")
         return 0, "N/A"
 
+def check_package_version():
+    try:
+        if PACKAGE_VERSION == "latest":
+            response = requests.get("https://api.github.com/repos/joaofolino/mqtt-monitor/releases/latest")
+            version = response.json()['tag_name'].lstrip('v')
+        else:
+            version = PACKAGE_VERSION
+        current_version = run_cmd(["dpkg-query", "--showformat=${Version}", "--show", "mqtt-monitor"]).strip()
+        if current_version != version:
+            log(f"Updating package from {current_version} to {version}", "INFO")
+            deb_url = f"https://github.com/joaofolino/mqtt-monitor/releases/download/v{version}/mqtt-monitor_{version}.deb"
+            subprocess.run(["wget", "-O", "/tmp/mqtt-monitor.deb", deb_url], check=True)
+            subprocess.run(["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=True)
+            log(f"Updated to version {version}", "INFO")
+            return True
+    except Exception as e:
+        log(f"Failed to check/update package version: {e}", "ERROR")
+    return False
+
 def main():
+    # Check package version
+    if check_package_version():
+        return  # Restarted by apt
+
     # Configure MQTT sensors
     for sensor in ["cpu_usage", "memory_used", "cpu_temp", "md1_usage", "nvme_usage"]:
         unit = "%" if "usage" in sensor else "°C" if "temp" in sensor else "MB"
@@ -212,7 +237,7 @@ def main():
             "unique_id": f"server_{sensor}", "device": {"identifiers": ["server_monitor"], "name": "Server Monitor"},
             "unit_of_measurement": unit
         }), retain=True)
-    disks = ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/nvme0n1", "/dev/md1"]
+    disks = DEVICES
     for disk in disks:
         disk_name = disk.split('/')[-1]
         for attr in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
@@ -225,9 +250,9 @@ def main():
         if ENABLE_IO_MQTT:
             for attr in ["read_rate", "write_rate"]:
                 client.publish(f"homeassistant/sensor/disk_{disk_name}_{attr}/config", json.dumps({
-                    "name": f"Disk {disk_name} {attr.replace('_', ' ').title()}", 
+                    "name": f"Disk {disk_name} {attr.replace('_', ' ').title()}",
                     "state_topic": f"{TOPIC_PREFIX}/disk/{disk_name}/{attr}",
-                    "unique_id": f"disk_{disk_name}_{attr}", 
+                    "unique_id": f"disk_{disk_name}_{attr}",
                     "device": {"identifiers": ["server_monitor"]},
                     "unit_of_measurement": "KB/s"
                 }), retain=True)
@@ -240,7 +265,7 @@ def main():
     devices = [d.split('/')[-1] for d in DEVICES]
     for dev in devices:
         prev_io[dev] = (0, 0)
-    
+
     last_smart_check = 0
     def publish(topic, value, retain=False):
         try:
