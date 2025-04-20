@@ -12,7 +12,7 @@ jobs:
         ports:
           - 1883:1883
         volumes:
-          - ./tests/mosquitto/config:/mosquitto/config; pwd;ls -l .; ls -l *;ls -l tests/;
+          - ${{ github.workspace }}/tests/mosquitto/config:/mosquitto/config
           - mosquitto-data:/mosquitto/data
           - mosquitto-log:/mosquitto/log
         options: >-
