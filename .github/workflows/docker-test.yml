@@ -4,7 +4,12 @@ on:
     branches: [master]
   workflow_dispatch:
 jobs:
+  checkout:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
   integration-test:
+    needs: checkout
     runs-on: ubuntu-22.04
     services:
       mosquitto:
@@ -22,26 +27,6 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - name: Ensure config files exist
-        run: |
-          mkdir -p /mosquitto/config
-          touch /mosquitto/config/mosquitto.conf /mosquitto/config/passwd
-          echo "# Allow external connections" > /mosquitto/config/mosquitto.conf
-          echo "listener 1883" >> /mosquitto/config/mosquitto.conf
-          echo "allow_anonymous false" >> /mosquitto/config/mosquitto.conf
-          echo "password_file /mosquitto/config/passwd" >> /mosquitto/config/mosquitto.conf
-          echo "persistence true" >> /mosquitto/config/mosquitto.conf
-          echo "persistence_location /mosquitto/data/" >> /mosquitto/config/mosquitto.conf
-          echo "log_dest file /mosquitto/log/mosquitto.log" >> /mosquitto/config/mosquitto.conf
-          chmod -R 644 /mosquitto/config/*
-      - name: Debug config directory
-        run: |
-          ls -l .
-          ls -l *
-          ls -l tests/
-          ls -l tests/mosquitto/config/
-          cat tests/mosquitto/config/mosquitto.conf
-          cat tests/mosquitto/config/passwd
       - name: Set up Mosquitto credentials
         run: |
           docker exec $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0") mosquitto_passwd -b /mosquitto/config/passwd test test
@@ -52,4 +37,4 @@ jobs:
           docker build -t mqtt-monitor:test -f tests/Dockerfile .
       - name: Run integration tests
         run: |
-          docker run --network host -v $(pwd):/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py
+          docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py
