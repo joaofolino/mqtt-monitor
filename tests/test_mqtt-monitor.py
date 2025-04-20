@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import paho.mqtt.client as mqtt
 import time
+import subprocess
 from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd, check_package_version
 
 class TestMqttMonitor(unittest.TestCase):

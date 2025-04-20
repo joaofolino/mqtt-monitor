@@ -33,6 +33,3 @@ jobs:
       - name: Run integration tests
         run: |
           docker run --network host -v $(pwd):/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py
-    volumes:
-      mosquitto-data:
-      mosquitto-log:
