@@ -196,7 +196,7 @@ class TestMqttMonitor(unittest.TestCase):
     def test_mqtt_publish_integration(self):
         client = mqtt.Client()
         client.username_pw_set("test", "test")
-        client.connect("localhost", 1883, 60)
+        client.connect("mosquitto", 1883, 60)
         client.loop_start()
 
         topic = "test/mqtt-monitor"
