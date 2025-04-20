@@ -22,6 +22,18 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure config files exist
+        run: |
+          mkdir -p tests/mosquitto/config
+          touch tests/mosquitto/config/mosquitto.conf tests/mosquitto/config/passwd
+          echo "# Allow external connections" > tests/mosquitto/config/mosquitto.conf
+          echo "listener 1883" >> tests/mosquitto/config/mosquitto.conf
+          echo "allow_anonymous false" >> tests/mosquitto/config/mosquitto.conf
+          echo "password_file /mosquitto/config/passwd" >> tests/mosquitto/config/mosquitto.conf
+          echo "persistence true" >> tests/mosquitto/config/mosquitto.conf
+          echo "persistence_location /mosquitto/data/" >> tests/mosquitto/config/mosquitto.conf
+          echo "log_dest file /mosquitto/log/mosquitto.log" >> tests/mosquitto/config/mosquitto.conf
+          chmod -R 644 tests/mosquitto/config/*
       - name: Debug config directory
         run: |
           ls -l .
@@ -30,9 +42,6 @@ jobs:
           ls -l tests/mosquitto/config/
           cat tests/mosquitto/config/mosquitto.conf
           cat tests/mosquitto/config/passwd
-      - name: Set config permissions
-        run: |
-          chmod -R 644 tests/mosquitto/config/*
       - name: Set up Mosquitto credentials
         run: |
           docker exec $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0") mosquitto_passwd -b /mosquitto/config/passwd test test
