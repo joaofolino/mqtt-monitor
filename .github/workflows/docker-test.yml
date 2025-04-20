@@ -24,16 +24,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Ensure config files exist
         run: |
-          mkdir -p tests/mosquitto/config
-          touch tests/mosquitto/config/mosquitto.conf tests/mosquitto/config/passwd
-          echo "# Allow external connections" > tests/mosquitto/config/mosquitto.conf
-          echo "listener 1883" >> tests/mosquitto/config/mosquitto.conf
-          echo "allow_anonymous false" >> tests/mosquitto/config/mosquitto.conf
-          echo "password_file /mosquitto/config/passwd" >> tests/mosquitto/config/mosquitto.conf
-          echo "persistence true" >> tests/mosquitto/config/mosquitto.conf
-          echo "persistence_location /mosquitto/data/" >> tests/mosquitto/config/mosquitto.conf
-          echo "log_dest file /mosquitto/log/mosquitto.log" >> tests/mosquitto/config/mosquitto.conf
-          chmod -R 644 tests/mosquitto/config/*
+          mkdir -p /mosquitto/config
+          touch /mosquitto/config/mosquitto.conf /mosquitto/config/passwd
+          echo "# Allow external connections" > /mosquitto/config/mosquitto.conf
+          echo "listener 1883" >> /mosquitto/config/mosquitto.conf
+          echo "allow_anonymous false" >> /mosquitto/config/mosquitto.conf
+          echo "password_file /mosquitto/config/passwd" >> /mosquitto/config/mosquitto.conf
+          echo "persistence true" >> /mosquitto/config/mosquitto.conf
+          echo "persistence_location /mosquitto/data/" >> /mosquitto/config/mosquitto.conf
+          echo "log_dest file /mosquitto/log/mosquitto.log" >> /mosquitto/config/mosquitto.conf
+          chmod -R 644 /mosquitto/config/*
       - name: Debug config directory
         run: |
           ls -l .
