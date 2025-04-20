@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+systemctl stop monitor.service
+systemctl disable monitor.service
+exit 0

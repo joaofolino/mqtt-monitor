@@ -1,0 +1,32 @@
+name: Build .deb
+on:
+  push:
+    branches: [master]
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper
+      - name: Create .deb structure
+        run: |
+          mkdir -p mqtt-monitor_1.0-1/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system}
+          cp src/mqtt-monitor.py mqtt-monitor_1.0-1/usr/bin/
+          cp src/mqtt-monitor.conf mqtt-monitor_1.0-1/etc/mqtt-monitor/
+          cp debian/mqtt-monitor.service mqtt-monitor_1.0-1/lib/systemd/system/
+          cp debian/control mqtt-monitor_1.0-1/DEBIAN/
+          cp debian/postinst mqtt-monitor_1.0-1/DEBIAN/
+          cp debian/prerm mqtt-monitor_1.0-1/DEBIAN/
+          cp debian/postrm mqtt-monitor_1.0-1/DEBIAN/
+          chmod 755 mqtt-monitor_1.0-1/usr/bin/mqtt-monitor.py
+          chmod 644 mqtt-monitor_1.0-1/etc/mqtt-monitor/mqtt-monitor.conf
+          chmod 644 mqtt-monitor_1.0-1/lib/systemd/system/mqtt-monitor.service
+          chmod 755 mqtt-monitor_1.0-1/DEBIAN/{postinst,prerm,postrm}
+      - name: Build .deb
+        run: dpkg-deb --build mqtt-monitor_1.0-1
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mqtt-monitor-deb
+          path: mqtt-monitor_1.0-1.deb

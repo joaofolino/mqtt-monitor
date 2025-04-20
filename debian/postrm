@@ -1,0 +1,8 @@
+#!/bin/sh
+#set -e
+#if [ "$1" = "purge" ]; then
+#    echo "Removing dependencies..."
+#    apt-get purge -y smartmontools python3-pip python3-psutil python3-paho-mqtt python3-openpyxl
+#    apt-get autoremove -y
+#fi
+#exit 0
