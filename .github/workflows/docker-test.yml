@@ -1,0 +1,28 @@
+name: Docker Integration Tests
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+jobs:
+  integration-test:
+    runs-on: ubuntu-22.04
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2.0
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t '$SYS/broker/uptime' -u test -P test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        run: |
+          docker build -t mqtt-monitor:test -f tests/Dockerfile .
+      - name: Run integration tests
+        run: |
+          docker run --network host -v $(pwd):/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py

@@ -4,22 +4,15 @@ A Python script to monitor disk SMART attributes, RAID status, and system metric
 
 ## Installation
 
-```bash
-# Download latest release
-wget https://github.com/joaofolino/mqtt-monitor/releases/latest/download/mqtt-monitor_*.deb
-sudo apt install ./mqtt-monitor_*.deb
-```
+See [Setup Guide](docs/setup.md).
 
 ## Configuration
 
-Edit `/etc/mqtt-monitor/mqtt-monitor.conf` to set MQTT broker, devices, and other settings.
+Edit `/etc/mqtt-monitor/mqtt-monitor.conf`. See [Setup Guide](docs/setup.md) for details.
 
-## Service
+## Troubleshooting
 
-```bash
-sudo systemctl start mqtt-monitor.service
-sudo systemctl status mqtt-monitor.service
-```
+See [Troubleshooting Guide](docs/troubleshooting.md).
 
 ## Development
 

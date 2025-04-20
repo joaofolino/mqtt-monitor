@@ -58,12 +58,35 @@ disk_cache = {}
 prev_io = {}
 prev_time = None
 
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        log("Connected to MQTT broker", "INFO")
+    else:
+        log(f"Failed to connect to MQTT broker, code: {rc}", "ERROR")
+
 client = mqtt.Client()
 client.username_pw_set(MQTT_USER, MQTT_PASS)
-client.connect(BROKER, PORT, 60)
+client.on_connect = on_connect
+client.reconnect_delay_set(min_delay=1, max_delay=120)
+
+def connect_mqtt():
+    try:
+        client.connect(BROKER, PORT, 60)
+        client.loop_start()
+    except Exception as e:
+        log(f"Failed to connect to MQTT broker: {e}", "ERROR")
+
+connect_mqtt()
 
 def log(message, level="INFO"):
-    getattr(logger, level.lower())(message)
+    try:
+        getattr(logger, level.lower())(message)
+        # Check disk space for log file
+        usage = psutil.disk_usage(LOG_DIR)
+        if usage.percent > 95:
+            send_alert("Log Directory Full", f"Log directory {LOG_DIR} is at {usage.percent}% capacity")
+    except Exception as e:
+        print(f"Logging error: {e}")
 
 def send_alert(subject, body):
     if not ENABLE_EMAIL:
@@ -165,7 +188,7 @@ def get_disk_info(dev, full=False):
                 continue
             smart_lines = result.splitlines()
             health = "PASSED" in result
-            state = "active" if health else "unknown"
+            state = "active" if health else "failed"
             temp = "N/A"
             for line in smart_lines:
                 if line.startswith("Temperature:") and len(line.split()) > 1 and line.split()[1].isdigit():
@@ -177,11 +200,14 @@ def get_disk_info(dev, full=False):
             poh = next((line.split()[-2] for line in smart_lines if "Power_On_Hours" in line), "N/A")
             realloc = next((line.split()[9] for line in smart_lines if line.startswith("Reallocated_Sector_Ct")), "N/A")
             spinup = next((line.split()[9] for line in smart_lines if line.startswith("Spin_Up_Time")), "N/A")
-            return {
+            info = {
                 "name": dev.split('/')[-1], "capacity": capacity, "state": state,
                 "health": "OK" if health else "FAILED", "temperature": temp, "power_on_hours": poh,
                 "reallocated_sectors": realloc, "spinup_count": spinup
             }
+            if not health:
+                send_alert(f"Disk {dev} Failed", f"SMART health check failed: {result[:200]}")
+            return info
         except Exception as e:
             log(f"Error getting SMART data for {dev} with -d {attempt_type}: {e}", "ERROR")
             continue
@@ -273,6 +299,7 @@ def main():
             client.publish(topic, str(value), retain=retain)
         except Exception as e:
             log(f"MQTT publish error {topic}: {e}", "ERROR")
+            connect_mqtt()  # Attempt reconnect
 
     global prev_time
     while True:

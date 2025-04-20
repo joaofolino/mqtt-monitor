@@ -4,10 +4,20 @@ on:
     tags:
       - 'v*'
 jobs:
-  release:
+  test-and-release:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install test dependencies
+        run: |
+          pip install pytest
+          pip install -r requirements.txt
+      - name: Run tests
+        run: pytest tests/test_mqtt-monitor.py
       - name: Get version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
@@ -15,17 +25,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper
       - name: Create .deb structure
         run: |
-          mkdir -p mqtt-monitor_${{ env.VERSION }}/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system}
+          mkdir -p mqtt-monitor_${{ env.VERSION }}/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system,usr/share/mqtt-monitor}
           cp src/mqtt-monitor.py mqtt-monitor_${{ env.VERSION }}/usr/bin/
-          cp src/mqtt-monitor.conf mqtt-monitor_${{ env.VERSION }}/etc/mqtt-monitor/
+          cp src/mqtt-monitor.conf mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/
+          cp src/merge_config.py mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/
           cp debian/mqtt-monitor.service mqtt-monitor_${{ env.VERSION }}/lib/systemd/system/
+          cp debian/mqtt-monitor.logrotate mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/
           sed "s/Version: 1.0-1/Version: ${{ env.VERSION }}/" debian/control > mqtt-monitor_${{ env.VERSION }}/DEBIAN/control
+          cp debian/conffiles mqtt-monitor_${{ env.VERSION }}/DEBIAN/
+          cp debian/changelog mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           cp debian/postinst mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           cp debian/prerm mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           cp debian/postrm mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           chmod 755 mqtt-monitor_${{ env.VERSION }}/usr/bin/mqtt-monitor.py
-          chmod 644 mqtt-monitor_${{ env.VERSION }}/etc/mqtt-monitor/mqtt-monitor.conf
+          chmod 644 mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/mqtt-monitor.conf
+          chmod 644 mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/merge_config.py
           chmod 644 mqtt-monitor_${{ env.VERSION }}/lib/systemd/system/mqtt-monitor.service
+          chmod 644 mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/mqtt-monitor.logrotate
+          chmod 644 mqtt-monitor_${{ env.VERSION }}/DEBIAN/{control,conffiles,changelog}
           chmod 755 mqtt-monitor_${{ env.VERSION }}/DEBIAN/{postinst,prerm,postrm}
       - name: Build .deb
         run: dpkg-deb --build mqtt-monitor_${{ env.VERSION }}

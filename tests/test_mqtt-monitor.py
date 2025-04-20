@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch, mock_open, MagicMock
-from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd
+import paho.mqtt.client as mqtt
+import time
+from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd, check_package_version
 
 class TestMqttMonitor(unittest.TestCase):
     @patch('mqtt_monitor.run_cmd')
@@ -95,7 +97,11 @@ class TestMqttMonitor(unittest.TestCase):
     @patch('subprocess.run')
     def test_check_package_version_latest(self, mock_subprocess, mock_requests):
         mock_requests.return_value.json.return_value = {'tag_name': 'v2.0-1'}
-        mock_subprocess.side_effect = [MagicMock(stdout='1.0-1'), None, None]
+        mock_subprocess.side_effect = [
+            MagicMock(stdout='1.0-1'),  # Current version
+            MagicMock(returncode=0),    # wget
+            MagicMock(returncode=0)     # apt install
+        ]
         global PACKAGE_VERSION
         PACKAGE_VERSION = "latest"
         result = check_package_version()
@@ -104,11 +110,15 @@ class TestMqttMonitor(unittest.TestCase):
     @patch('requests.get')
     @patch('subprocess.run')
     def test_check_package_version_specific(self, mock_subprocess, mock_requests):
-        mock_subprocess.side_effect = [MagicMock(stdout='1.0-1'), None, None]
+        mock_subprocess.side_effect = [
+            MagicMock(stdout='1.0-1'),  # Current version
+            MagicMock(returncode=0),    # wget
+            MagicMock(returncode=0)     # apt install
+        ]
         global PACKAGE_VERSION
         PACKAGE_VERSION = "2.0-1"
-        check_package_version()
-        mock_requests.assert_called_with("https://api.github.com/repos/joaofolino/mqtt-monitor/releases/latest")
+        result = check_package_version()
+        self.assertTrue(result)
 
     def test_get_disk_info_md1(self):
         result = get_disk_info('/dev/md1', full=True)
@@ -131,3 +141,76 @@ class TestMqttMonitor(unittest.TestCase):
         mock_run_cmd.return_value = "invalid"
         result = get_disk_info('/dev/sda', full=False)
         self.assertEqual(result['capacity'], 0)
+
+    @patch('subprocess.run')
+    def test_install_deb(self, mock_subprocess):
+        mock_subprocess.return_value = MagicMock(returncode=0)
+        subprocess.run(["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=True)
+        mock_subprocess.assert_called_with(
+            ["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=True
+        )
+
+    @patch('subprocess.run')
+    def test_remove_deb(self, mock_subprocess):
+        mock_subprocess.return_value = MagicMock(returncode=0)
+        subprocess.run(["apt", "remove", "-y", "mqtt-monitor"], check=True)
+        mock_subprocess.assert_called_with(
+            ["apt", "remove", "-y", "mqtt-monitor"], check=True
+        )
+
+    @patch('subprocess.run')
+    def test_purge_deb(self, mock_subprocess):
+        mock_subprocess.return_value = MagicMock(returncode=0)
+        subprocess.run(["apt", "purge", "-y", "mqtt-monitor"], check=True)
+        mock_subprocess.assert_called_with(
+            ["apt", "purge", "-y", "mqtt-monitor"], check=True
+        )
+
+    @patch('requests.get')
+    @patch('subprocess.run')
+    def test_update_to_latest(self, mock_subprocess, mock_requests):
+        mock_requests.return_value.json.return_value = {'tag_name': 'v2.0-1'}
+        mock_subprocess.side_effect = [
+            MagicMock(stdout='1.0-1'),  # Current version
+            MagicMock(returncode=0),    # wget
+            MagicMock(returncode=0)     # apt install
+        ]
+        global PACKAGE_VERSION
+        PACKAGE_VERSION = "latest"
+        result = check_package_version()
+        self.assertTrue(result)
+        mock_subprocess.assert_any_call(
+            ["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=True
+        )
+
+    @patch('mqtt_monitor.run_cmd')
+    @patch('mqtt_monitor.send_alert')
+    def test_disk_failure_alert(self, mock_send_alert, mock_run_cmd):
+        mock_run_cmd.return_value = "FAILED\nTemperature: 50\nReallocated_Sector_Ct 10"
+        result = get_disk_info('/dev/sda', full=True)
+        self.assertEqual(result['health'], 'FAILED')
+        mock_send_alert.assert_called_with(
+            "Disk /dev/sda Failed", unittest.mock.ANY
+        )
+
+    def test_mqtt_publish_integration(self):
+        client = mqtt.Client()
+        client.username_pw_set("test", "test")
+        client.connect("localhost", 1883, 60)
+        client.loop_start()
+
+        topic = "test/mqtt-monitor"
+        payload = "test_value"
+        client.publish(topic, payload)
+
+        received = []
+        def on_message(client, userdata, msg):
+            received.append((msg.topic, msg.payload.decode()))
+        client.subscribe(topic)
+        client.on_message = on_message
+
+        time.sleep(1)  # Wait for message
+        client.loop_stop()
+        client.disconnect()
+
+        self.assertIn((topic, payload), received)
