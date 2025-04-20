@@ -19,9 +19,20 @@ jobs:
           --health-cmd "mosquitto_sub -t 'test' -u test -P test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 3
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: Debug config directory
+        run: |
+          ls -l .
+          ls -l *
+          ls -l tests/
+          ls -l tests/mosquitto/config/
+          cat tests/mosquitto/config/mosquitto.conf
+          cat tests/mosquitto/config/passwd
+      - name: Set config permissions
+        run: |
+          chmod -R 644 tests/mosquitto/config/*
       - name: Set up Mosquitto credentials
         run: |
           docker exec $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0") mosquitto_passwd -b /mosquitto/config/passwd test test
