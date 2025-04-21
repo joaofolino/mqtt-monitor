@@ -11,6 +11,22 @@ jobs:
       - name: Build custom Mosquitto image
         run: |
           docker build -t custom-mosquitto:test -f ${{ github.workspace }}/tests/mosquitto/Dockerfile ${{ github.workspace }}/tests/mosquitto
+      - name: Run Mosquitto container
+        run: |
+          docker run -d --name mosquitto -p 1883:1883 -v mosquitto-data:/mosquitto/data -v mosquitto-log:/mosquitto/log --health-cmd "mosquitto_sub -t 'test' -u test -P test" --health-interval 10s --health-timeout 5s --health-retries 5 custom-mosquitto:test
+      - name: Wait for Mosquitto to be healthy
+        run: |
+          for i in {1..30}; do
+            if docker inspect mosquitto --format='{{.State.Health.Status}}' | grep -q "healthy"; then
+              echo "Mosquitto is healthy"
+              exit 0
+            fi
+            echo "Waiting for Mosquitto to be healthy..."
+            sleep 2
+          done
+          echo "Mosquitto failed to become healthy"
+          docker logs mosquitto
+          exit 1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build test image
@@ -19,16 +35,8 @@ jobs:
       - name: Run integration tests
         run: |
           docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py
-    services:
-      mosquitto:
-        image: custom-mosquitto:test
-        ports:
-          - 1883:1883
-        volumes:
-          - mosquitto-data:/mosquitto/data
-          - mosquitto-log:/mosquitto/log
-        options: >-
-          --health-cmd "mosquitto_sub -t 'test' -u test -P test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+      - name: Stop Mosquitto container
+        if: always()
+        run: |
+          docker stop mosquitto || true
+          docker rm mosquitto || true
