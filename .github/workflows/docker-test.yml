@@ -40,6 +40,9 @@ jobs:
       - name: Build test image
         run: |
           docker build -t mqtt-monitor:test -f ${{ github.workspace }}/tests/Dockerfile ${{ github.workspace }}
+      - name: Debug config file
+        run: |
+          docker run --rm mqtt-monitor:test cat /app/mqtt-monitor.conf
       - name: Run integration tests
         run: |
           docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
