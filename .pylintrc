@@ -2,13 +2,12 @@
 disable=
     too-many-arguments,
     too-many-positional-arguments,
-    unused-argument
+    unused-argument,
+    too-few-public-methods
 
 [MESSAGES CONTROL]
 max-line-length=120
 max-attributes=30
-
-[DESIGN]
-max-locals=20
-max-branches=15
-max-statements=60
+max-locals=25
+max-branches=20
+max-statements=7

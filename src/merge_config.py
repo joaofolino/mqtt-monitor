@@ -1,7 +1,8 @@
 import configparser
 import sys
 
-"""Utility script to merge two configuration files into a single output file.
+"""
+Utility script to merge two configuration files into a single output file.
 
 This script reads two INI configuration files, merges sections and options from the
 new configuration into the existing one (adding missing options without overwriting),

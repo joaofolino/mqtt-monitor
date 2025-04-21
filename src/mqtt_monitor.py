@@ -13,7 +13,8 @@ import paho.mqtt.client as mqtt
 import psutil
 import requests
 
-"""MQTT Monitor: Monitors system metrics and publishes to MQTT.
+"""
+MQTT Monitor: Monitors system metrics and publishes to MQTT.
 
 This script monitors disk health, RAID status, disk I/O, CPU temperature, and disk
 usage, publishing metrics to an MQTT broker and sending alerts via email for critical
@@ -522,6 +523,87 @@ def publish_data(config, logger, client, topic, value, retain=False):
         log(config, logger, f"MQTT publish error {topic}: {e}", "ERROR")
         connect_mqtt(config, logger, client)
 
+def check_disks(config, logger, client, state, current_time, last_smart_check):
+    """Check disk information and publish to MQTT.
+
+    Args:
+        config (Config): Configuration object.
+        logger (logging.Logger): Logger instance.
+        client: MQTT client instance.
+        state (MonitorState): Monitoring state.
+        current_time (float): Current timestamp.
+        last_smart_check (float): Last SMART check timestamp.
+
+    Returns:
+        float: Updated last_smart_check timestamp.
+    """
+    log(config, logger, "Checking disk info", "DEBUG")
+    if current_time - last_smart_check >= config.smart_interval:
+        for disk in config.devices:
+            disk_cache[disk] = get_disk_info(config, logger, disk, full=True)
+        last_smart_check = current_time
+    else:
+        for disk in config.devices:
+            if disk_cache.get(disk, {}).get("state") != "active":
+                disk_cache[disk] = get_disk_info(config, logger, disk, full=False)
+    for disk in config.devices:
+        disk_name = disk.split('/')[-1]
+        info = disk_cache[disk]
+        for key in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
+            publish_data(config, logger, client,
+                         f"{config.topic_prefix}/disk/{disk_name}/{key}", info.get(key, "N/A"))
+        log(config, logger, f"{disk}: state={info['state']}, "
+                            f"temp={info.get('temperature', 'N/A')}°C", "INFO")
+    return last_smart_check
+
+def check_usage(config, logger, client):
+    """Check disk usage and publish to MQTT.
+
+    Args:
+        config (Config): Configuration object.
+        logger (logging.Logger): Logger instance.
+        client: MQTT client instance.
+    """
+    log(config, logger, "Checking usage", "DEBUG")
+    for mount in config.disk_usage_mounts:
+        usage, free = get_usage(config, logger, mount)
+        mount_name = mount.strip('/').replace('/', '_') or 'root'
+        publish_data(config, logger, client,
+                     f"{config.topic_prefix}/host/{mount_name}_usage", usage)
+        log(config, logger, f"{mount}: {usage}% used, {free} free", "INFO")
+        if mount == "/" and usage > config.md1_usage_threshold:
+            send_alert(config, logger, "md1 Capacity Critical",
+                       f"md1 at {usage}%, only {free} free")
+
+def check_io(config, logger, client, state, delta_time, devices):
+    """Check disk I/O and publish rates to MQTT.
+
+    Args:
+        config (Config): Configuration object.
+        logger (logging.Logger): Logger instance.
+        client: MQTT client instance.
+        state (MonitorState): Monitoring state.
+        delta_time (float): Time delta since last check.
+        devices (list): List of device names.
+    """
+    current_io = {dev: get_disk_io(config, logger, dev) for dev in devices}
+    for dev, (reads, writes) in current_io.items():
+        prev_reads, prev_writes = state.prev_io.get(dev, (0, 0))
+        read_delta = reads - prev_reads
+        write_delta = writes - prev_writes
+        read_rate = min(read_delta / delta_time / 1024, config.max_io_rate)
+        write_rate = min(write_delta / delta_time / 1024, config.max_io_rate)
+        log(config, logger, f"{dev} IO: read_rate={read_rate:.2f} KB/s, "
+                            f"write_rate={write_rate:.2f} KB/s", "INFO")
+        if config.enable_io_mqtt:
+            publish_data(config, logger, client,
+                         f"{config.topic_prefix}/disk/{dev}/read_rate", f"{read_rate:.2f}")
+            publish_data(config, logger, client,
+                         f"{config.topic_prefix}/disk/{dev}/write_rate", f"{write_rate:.2f}")
+        if dev == "md1" and write_rate > config.md1_write_spike_threshold:
+            send_alert(config, logger, "md1 Write Spike", f"Write rate: {write_rate:.2f} KB/s")
+        state.prev_io[dev] = (reads, writes)
+
 def main():
     """Run the main monitoring loop."""
     config = load_config(os.getenv('CONFIG_PATH', '/etc/mqtt-monitor'))
@@ -550,23 +632,7 @@ def main():
             with open(config.cpu_temp_path, "r", encoding="utf-8") as f:
                 cpu_temp = int(f.read().strip()) / 1000
             publish_data(config, logger, client, f"{config.topic_prefix}/host/cpu_temp", cpu_temp)
-            current_io = {dev: get_disk_io(config, logger, dev) for dev in devices}
-            for dev, (reads, writes) in current_io.items():
-                prev_reads, prev_writes = state.prev_io.get(dev, (0, 0))
-                read_delta = reads - prev_reads
-                write_delta = writes - prev_writes
-                read_rate = min(read_delta / delta_time / 1024, config.max_io_rate)
-                write_rate = min(write_delta / delta_time / 1024, config.max_io_rate)
-                log(config, logger, f"{dev} IO: read_rate={read_rate:.2f} KB/s, "
-                                    f"write_rate={write_rate:.2f} KB/s", "INFO")
-                if config.enable_io_mqtt:
-                    publish_data(config, logger, client,
-                                 f"{config.topic_prefix}/disk/{dev}/read_rate", f"{read_rate:.2f}")
-                    publish_data(config, logger, client,
-                                 f"{config.topic_prefix}/disk/{dev}/write_rate", f"{write_rate:.2f}")
-                if dev == "md1" and write_rate > config.md1_write_spike_threshold:
-                    send_alert(config, logger, "md1 Write Spike", f"Write rate: {write_rate:.2f} KB/s")
-                state.prev_io[dev] = (reads, writes)
+            check_io(config, logger, client, state, delta_time, devices)
             log(config, logger, "Checking RAID status", "DEBUG")
             raid_status = get_raid_status(config, logger)
             for array, status in raid_status.items():
@@ -584,33 +650,8 @@ def main():
                 if status["state"] == "degraded":
                     send_alert(config, logger, f"RAID {array} Degraded",
                                f"Status: {status['raw']}")
-            log(config, logger, "Checking usage", "DEBUG")
-            for mount in config.disk_usage_mounts:
-                usage, free = get_usage(config, logger, mount)
-                mount_name = mount.strip('/').replace('/', '_') or 'root'
-                publish_data(config, logger, client,
-                             f"{config.topic_prefix}/host/{mount_name}_usage", usage)
-                log(config, logger, f"{mount}: {usage}% used, {free} free", "INFO")
-                if mount == "/" and usage > config.md1_usage_threshold:
-                    send_alert(config, logger, "md1 Capacity Critical",
-                               f"md1 at {usage}%, only {free} free")
-            log(config, logger, "Checking disk info", "DEBUG")
-            if current_time - last_smart_check >= config.smart_interval:
-                for disk in config.devices:
-                    disk_cache[disk] = get_disk_info(config, logger, disk, full=True)
-                last_smart_check = current_time
-            else:
-                for disk in config.devices:
-                    if disk_cache.get(disk, {}).get("state") != "active":
-                        disk_cache[disk] = get_disk_info(config, logger, disk, full=False)
-            for disk in config.devices:
-                disk_name = disk.split('/')[-1]
-                info = disk_cache[disk]
-                for key in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
-                    publish_data(config, logger, client,
-                                 f"{config.topic_prefix}/disk/{disk_name}/{key}", info.get(key, "N/A"))
-                log(config, logger, f"{disk}: state={info['state']}, "
-                                    f"temp={info.get('temperature', 'N/A')}°C", "INFO")
+            check_usage(config, logger, client)
+            last_smart_check = check_disks(config, logger, client, state, current_time, last_smart_check)
             log(config, logger, "Loop cycle complete", "DEBUG")
             time.sleep(config.sleep_interval)
         except (ConnectionError, IOError, RuntimeError) as e:
