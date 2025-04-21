@@ -1,6 +1,4 @@
-import configparser
-import sys
-
+#!/usr/bin/env python3
 """
 Utility script to merge two configuration files into a single output file.
 
@@ -8,6 +6,9 @@ This script reads two INI configuration files, merges sections and options from 
 new configuration into the existing one (adding missing options without overwriting),
 and writes the result to an output file.
 """
+
+import configparser
+import sys
 
 def merge_configs(existing_file, new_file, output_file):
     """Merge two configuration files, preserving existing settings and adding new ones.
