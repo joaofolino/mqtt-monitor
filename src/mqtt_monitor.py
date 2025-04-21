@@ -176,13 +176,17 @@ def get_disk_info(dev, full=False):
     if dev not in disk_cache:
         try:
             size = run_cmd(["blockdev", "--getsize64", dev])
-            disk_cache[dev] = {"capacity": size if size else "0"}
+            if size and size.isdigit():
+                disk_cache[dev] = {"capacity": size}
+            else:
+                log(f"Invalid blockdev output for {dev}: {size}", "ERROR")
+                disk_cache[dev] = {"capacity": "0"}
         except Exception as e:
             log(f"Error getting capacity for {dev}: {e}", "ERROR")
             disk_cache[dev] = {"capacity": "0"}
     size = disk_cache[dev]["capacity"]
     try:
-        capacity = int(size) // 1024 // 1024 // 1024 if size else 0
+        capacity = int(size) // 1024 // 1024 // 1024 if size and size.isdigit() else 0
     except ValueError:
         log(f"Invalid capacity for {dev}: {size}", "ERROR")
         capacity = 0
@@ -202,16 +206,21 @@ def get_disk_info(dev, full=False):
             health = "PASSED" in result
             state = "active" if health else "failed"
             temp = "N/A"
+            poh = "N/A"
+            realloc = "N/A"
+            spinup = "N/A"
             for line in smart_lines:
-                if line.startswith("Temperature:") and len(line.split()) > 1 and line.split()[1].isdigit():
-                    temp = line.split()[1]
-                    break
-                if line.startswith("Current Drive Temperature:") and len(line.split()) > 3 and line.split()[3].isdigit():
-                    temp = line.split()[3]
-                    break
-            poh = next((line.split()[-2] for line in smart_lines if "Power_On_Hours" in line), "N/A")
-            realloc = next((line.split()[9] for line in smart_lines if line.startswith("Reallocated_Sector_Ct")), "N/A")
-            spinup = next((line.split()[9] for line in smart_lines if line.startswith("Spin_Up_Time")), "N/A")
+                parts = line.split()
+                if line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
+                    temp = parts[1]
+                elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
+                    temp = parts[3]
+                elif "Power_On_Hours" in line and len(parts) > 9:
+                    poh = parts[-2]
+                elif line.startswith("Reallocated_Sector_Ct") and len(parts) > 9:
+                    realloc = parts[9]
+                elif line.startswith("Spin_Up_Time") and len(parts) > 9:
+                    spinup = parts[9]
             info = {
                 "name": dev.split('/')[-1], "capacity": capacity, "state": state,
                 "health": "OK" if health else "FAILED", "temperature": temp, "power_on_hours": poh,
