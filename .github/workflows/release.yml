@@ -6,6 +6,8 @@ on:
 jobs:
   test-and-release:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write  # Required to create a release
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
