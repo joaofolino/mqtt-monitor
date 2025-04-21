@@ -1,0 +1,14 @@
+[MASTER]
+disable=
+    too-many-arguments,
+    too-many-positional-arguments,
+    unused-argument
+
+[MESSAGES CONTROL]
+max-line-length=120
+max-attributes=30
+
+[DESIGN]
+max-locals=20
+max-branches=15
+max-statements=60
