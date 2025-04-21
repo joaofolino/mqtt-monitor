@@ -10,9 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: List
         run: |
-          ls -l ${{ github.workspace }}
-          ls -l ${{ github.workspace }}/tests
-          ls -l ${{ github.workspace }}/tests/mosquitto
+          chown 1000:1000 ${{ github.workspace }}/tests/mosquitto/config/mosquitto.conf
           ls -l ${{ github.workspace }}/tests/mosquitto/config
   integration-test:
     needs: where-ma-files
