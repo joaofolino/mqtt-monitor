@@ -13,3 +13,5 @@ RUN pip3 install -r requirements.txt pytest
 
 COPY src/ /app/src/
 COPY tests/ /app/tests/
+
+ENV PYTHONPATH=/app/src
