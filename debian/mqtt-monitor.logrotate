@@ -1,0 +1,11 @@
+/var/log/mqtt-monitor.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    create 664 mqtt-monitor disk
+    postrotate
+        systemctl reload mqtt-monitor.service >/dev/null 2>&1 || true
+    endscript
+}

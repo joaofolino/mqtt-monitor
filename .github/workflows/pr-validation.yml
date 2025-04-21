@@ -13,9 +13,7 @@ jobs:
           python-version: '3.10'
       - name: Install dependencies
         run: |
-          pip install flake8 pytest
-          pip install -r requirements.txt
-      - name: Lint with flake8
-        run: flake8 src/mqtt-monitor.py
-      - name: Run tests
-        run: pytest tests/test_mqtt-monitor.py
+          pip install -r requirements.txt pytest pylint
+      - name: Run pylint
+        run: |
+          pylint --rcfile=.pylintrc src/*.py

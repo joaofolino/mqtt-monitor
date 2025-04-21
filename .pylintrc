@@ -1,0 +1,16 @@
+[MASTER]
+disable=
+    too-many-arguments,
+    too-many-positional-arguments,
+    unused-argument,
+    too-few-public-methods,
+    broad-except,
+    missing-timeout,
+    superfluous-parens
+
+[MESSAGES CONTROL]
+max-line-length=120
+max-attributes=30
+max-locals=35
+max-branches=20
+max-statements=65

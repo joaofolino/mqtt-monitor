@@ -7,11 +7,46 @@ if ! id mqtt-monitor >/dev/null 2>&1; then
     usermod -aG disk mqtt-monitor
 fi
 
+# Handle configuration file
+CONFIG_DIR=/etc/mqtt-monitor
+CONFIG_FILE=$CONFIG_DIR/mqtt-monitor.conf
+CONFIG_OLD=$CONFIG_DIR/mqtt-monitor.conf_old
+CONFIG_NEW=$CONFIG_DIR/mqtt-monitor.conf_new
+PACKAGED_CONFIG=/usr/share/mqtt-monitor/mqtt-monitor.conf
+
+# Create config directory if it doesn't exist
+mkdir -p $CONFIG_DIR
+
+# Back up existing config if it exists
+if [ -f "$CONFIG_FILE" ]; then
+    cp "$CONFIG_FILE" "$CONFIG_OLD"
+fi
+
+# Copy packaged config to .conf_new
+cp "$PACKAGED_CONFIG" "$CONFIG_NEW"
+
+# If config file exists, merge missing options; otherwise, use packaged config
+if [ -f "$CONFIG_FILE" ]; then
+    python3 /usr/share/mqtt-monitor/merge_config.py "$CONFIG_FILE" "$CONFIG_NEW" "$CONFIG_FILE"
+else
+    cp "$PACKAGED_CONFIG" "$CONFIG_FILE"
+fi
+
 # Set permissions
 chown mqtt-monitor:disk /var/log/mqtt-monitor.log 2>/dev/null || touch /var/log/mqtt-monitor.log
 chmod 664 /var/log/mqtt-monitor.log
-chown mqtt-monitor:disk /etc/mqtt-monitor/mqtt-monitor.conf
-chmod 660 /etc/mqtt-monitor/mqtt-monitor.conf
+chown mqtt-monitor:disk "$CONFIG_FILE"
+chmod 660 "$CONFIG_FILE"
+chown mqtt-monitor:disk "$CONFIG_NEW"
+chmod 660 "$CONFIG_NEW"
+chown mqtt-monitor:disk "$CONFIG_OLD" 2>/dev/null || true
+chmod 660 "$CONFIG_OLD" 2>/dev/null || true
+
+# Install logrotate configuration if it doesn't exist
+if [ ! -f /etc/logrotate.d/mqtt-monitor ]; then
+    cp /usr/share/mqtt-monitor/mqtt-monitor.logrotate /etc/logrotate.d/mqtt-monitor
+    chmod 644 /etc/logrotate.d/mqtt-monitor
+fi
 
 # Install Python dependencies
 pip3 install paho-mqtt psutil openpyxl requests

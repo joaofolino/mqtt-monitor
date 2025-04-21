@@ -1,0 +1,9 @@
+mqtt-monitor (1.0-1) unstable; urgency=medium
+
+  * Initial release of MQTT Monitor.
+  * Monitors disk SMART attributes, RAID status, and system metrics.
+  * Publishes to MQTT for Home Assistant integration.
+  * Supports automatic version updates via GitHub Releases.
+  * Includes log rotation and configuration preservation.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com>  Sun, 20 Apr 2025 10:00:00 +0000

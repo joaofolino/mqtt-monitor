@@ -11,22 +11,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper
       - name: Create .deb structure
         run: |
-          mkdir -p mqtt-monitor_1.0-1/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system}
-          cp src/mqtt-monitor.py mqtt-monitor_1.0-1/usr/bin/
-          cp src/mqtt-monitor.conf mqtt-monitor_1.0-1/etc/mqtt-monitor/
-          cp debian/mqtt-monitor.service mqtt-monitor_1.0-1/lib/systemd/system/
-          cp debian/control mqtt-monitor_1.0-1/DEBIAN/
-          cp debian/postinst mqtt-monitor_1.0-1/DEBIAN/
-          cp debian/prerm mqtt-monitor_1.0-1/DEBIAN/
-          cp debian/postrm mqtt-monitor_1.0-1/DEBIAN/
-          chmod 755 mqtt-monitor_1.0-1/usr/bin/mqtt-monitor.py
-          chmod 644 mqtt-monitor_1.0-1/etc/mqtt-monitor/mqtt-monitor.conf
-          chmod 644 mqtt-monitor_1.0-1/lib/systemd/system/mqtt-monitor.service
-          chmod 755 mqtt-monitor_1.0-1/DEBIAN/{postinst,prerm,postrm}
+          mkdir -p mqtt-monitor_deb/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system,usr/share/mqtt-monitor}
+          cp src/mqtt_monitor.py mqtt-monitor_deb/usr/bin/
+          cp src/mqtt-monitor.conf mqtt-monitor_deb/usr/share/mqtt-monitor/
+          cp src/merge_config.py mqtt-monitor_deb/usr/share/mqtt-monitor/
+          cp debian/mqtt-monitor.service mqtt-monitor_deb/lib/systemd/system/
+          cp debian/mqtt-monitor.logrotate mqtt-monitor_deb/usr/share/mqtt-monitor/
+          cp debian/control mqtt-monitor_deb/DEBIAN/
+          cp debian/conffiles mqtt-monitor_deb/DEBIAN/
+          cp debian/changelog mqtt-monitor_deb/DEBIAN/
+          cp debian/postinst mqtt-monitor_deb/DEBIAN/
+          cp debian/prerm mqtt-monitor_deb/DEBIAN/
+          cp debian/postrm mqtt-monitor_deb/DEBIAN/
+          chmod 755 mqtt-monitor_deb/usr/bin/mqtt_monitor.py
+          chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt-monitor.conf
+          chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/merge_config.py
+          chmod 644 mqtt-monitor_deb/lib/systemd/system/mqtt-monitor.service
+          chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt-monitor.logrotate
+          chmod 644 mqtt-monitor_deb/DEBIAN/{control,conffiles,changelog}
+          chmod 755 mqtt-monitor_deb/DEBIAN/{postinst,prerm,postrm}
       - name: Build .deb
-        run: dpkg-deb --build mqtt-monitor_1.0-1
+        run: dpkg-deb --build mqtt-monitor_deb mqtt-monitor_master.deb
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mqtt-monitor-deb
-          path: mqtt-monitor_1.0-1.deb
+          path: mqtt-monitor_master.deb
