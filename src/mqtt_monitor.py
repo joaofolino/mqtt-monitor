@@ -14,18 +14,32 @@ import logging
 
 # Load configuration
 config = configparser.ConfigParser()
-config.read(os.getenv('CONFIG_PATH', '/etc/mqtt-monitor/mqtt-monitor.conf'))
+config_path = os.getenv('CONFIG_PATH', '/etc/mqtt-monitor/mqtt-monitor.conf')
+print(f"Loading config from: {config_path}")  # Debug
+try:
+    if not config.read(config_path):
+        raise FileNotFoundError(f"Config file {config_path} not found or unreadable")
+except Exception as e:
+    print(f"Error loading config: {e}")
+    raise
 
 # General configs
-ENABLE_EMAIL = config.getboolean('monitor', 'enable_email')
-LOG_LEVEL = config['monitor']['log_level']
-ENABLE_IO_MQTT = config.getboolean('monitor', 'enable_io_mqtt')
-ALERT_EMAIL = config['monitor']['alert_email']
-SMTP_SERVER = config['monitor']['smtp_server']
-SMTP_PORT = config.getint('monitor', 'smtp_port')
-SMTP_USER = config['monitor']['smtp_user']
-SMTP_PASS = config['monitor']['smtp_pass']
-PACKAGE_VERSION = config['monitor']['package_version']
+try:
+    ENABLE_EMAIL = config.getboolean('monitor', 'enable_email')
+    LOG_LEVEL = config['monitor']['log_level']
+    ENABLE_IO_MQTT = config.getboolean('monitor', 'enable_io_mqtt')
+    ALERT_EMAIL = config['monitor']['alert_email']
+    SMTP_SERVER = config['monitor']['smtp_server']
+    SMTP_PORT = config.getint('monitor', 'smtp_port')
+    SMTP_USER = config['monitor']['smtp_user']
+    SMTP_PASS = config['monitor']['smtp_pass']
+    PACKAGE_VERSION = config['monitor']['package_version']
+except configparser.NoSectionError as e:
+    print(f"Config error: Missing section {e}")
+    raise
+except configparser.NoOptionError as e:
+    print(f"Config error: Missing option {e}")
+    raise
 
 # MQTT configs
 BROKER = config['mqtt']['broker']
