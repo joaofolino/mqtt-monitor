@@ -1,8 +1,13 @@
-Package: mqtt-monitor
-Version: 1.0-1
-Architecture: all
+Source: mqtt-monitor
+Section: utils
+Priority: optional
 Maintainer: Joao Lino <joao.oliveira.lino@gmail.com>
-Depends: smartmontools, python3, python3-pip, python3-psutil, python3-paho-mqtt, python3-requests
-Recommends: python3-openpyxl
+Build-Depends: debhelper (>= 13)
+Standards-Version: 4.5.1
+Homepage: https://github.com/joaofolino/mqtt-monitor
+
+Package: mqtt-monitor
+Architecture: all
+Depends: python3, python3-psutil, python3-paho-mqtt, python3-requests, smartmontools, util-linux
 Description: Monitors SMART data, RAID, and system metrics via MQTT
  A Python script to monitor disk SMART attributes, RAID status, and system metrics, publishing to MQTT.
