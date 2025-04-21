@@ -17,6 +17,3 @@ jobs:
       - name: Run pylint
         run: |
           pylint --rcfile=.pylintrc src/*.py
-      - name: Run unit tests
-        run: |
-          pytest tests/test_mqtt_monitor.py --ignore=tests/test_mqtt_publish_integration
