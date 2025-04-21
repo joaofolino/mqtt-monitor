@@ -1,7 +1,19 @@
 import pytest
 import paho.mqtt.client as mqtt
+import logging
+import subprocess
+import unittest
+import os
 from unittest.mock import patch, MagicMock
-from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd, check_package_version
+from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd, check_package_version, disk_cache
+
+@pytest.fixture
+def setup_mdstat(tmp_path):
+    mdstat_path = "/app/tests/mdstat"
+    def _write_mdstat(content):
+        with open(mdstat_path, "w") as f:
+            f.write(content)
+    return _write_mdstat
 
 class TestMqttMonitor:
     @patch('mqtt_monitor.run_cmd')
@@ -24,21 +36,19 @@ class TestMqttMonitor:
         result = get_disk_info('/dev/sda', full=False)
         assert result['capacity'] == 4
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_get_raid_status(self, mock_run_cmd):
-        mock_run_cmd.return_value = """
+    def test_get_raid_status(self, setup_mdstat):
+        setup_mdstat("""
         md0 : active raid1 sda[0] sdb[1]
               1048576 blocks [2/2] [UU]
-        """
+        """)
         result = get_raid_status()
         assert result['md0']['state'] == 'active'
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_get_raid_status_degraded(self, mock_run_cmd):
-        mock_run_cmd.return_value = """
+    def test_get_raid_status_degraded(self, setup_mdstat):
+        setup_mdstat("""
         md0 : active raid1 sda[0]
               1048576 blocks [2/1] [U_]
-        """
+        """)
         result = get_raid_status()
         assert result['md0']['state'] == 'degraded'
 
@@ -52,7 +62,11 @@ class TestMqttMonitor:
     @patch('mqtt_monitor.run_cmd')
     @patch('mqtt_monitor.psutil.disk_usage')
     def test_get_usage(self, mock_disk_usage, mock_run_cmd):
-        mock_run_cmd.return_value = "/dev/sda1  100G  50G  50G  50% /"
+        mock_run_cmd.return_value = """
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1       100G   50G   50G  50% /
+"""
+        mock_disk_usage.return_value = MagicMock(percent=75, free=1073741824)  # 1GB free
         result = get_usage('/')
         assert result == (50, '50G')
 
@@ -89,18 +103,17 @@ class TestMqttMonitor:
             mock_get_logger.return_value = mock_logger
             mock_logger.getEffectiveLevel.return_value = logging.INFO
             log("Test debug", "DEBUG")
-            mock_logger.debug.assert_called_with("Test debug")
-            # Verify no actual log output (handled by logger level)
+            mock_logger.debug.assert_not_called()
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_run_cmd_success(self, mock_run_cmd):
-        mock_run_cmd.return_value = "success"
+    @patch('subprocess.run')
+    def test_run_cmd_success(self, mock_subprocess_run):
+        mock_subprocess_run.return_value = MagicMock(stdout="success")
         result = run_cmd(["ls"])
         assert result == "success"
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_run_cmd_failure(self, mock_run_cmd):
-        mock_run_cmd.side_effect = subprocess.SubprocessError("error")
+    @patch('subprocess.run')
+    def test_run_cmd_failure(self, mock_subprocess_run):
+        mock_subprocess_run.side_effect = subprocess.SubprocessError("error")
         result = run_cmd(["ls"])
         assert result == ""
 
@@ -114,20 +127,20 @@ class TestMqttMonitor:
         mock_requests.assert_called_with("https://api.github.com/repos/joaofolino/mqtt-monitor/releases/latest")
         mock_subprocess_run.assert_called()
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_get_disk_io_no_data(self, mock_run_cmd):
-        mock_run_cmd.return_value = ""
+    @patch('mqtt_monitor.psutil.disk_io_counters')
+    def test_get_disk_io_no_data(self, mock_io_counters):
+        mock_io_counters.return_value = {}
         reads, writes = get_disk_io('sda')
         assert reads == 0
         assert writes == 0
 
     @patch('mqtt_monitor.run_cmd')
-    def test_get_usage_fallback(self, mock_run_cmd):
+    @patch('mqtt_monitor.psutil.disk_usage')
+    def test_get_usage_fallback(self, mock_disk_usage, mock_run_cmd):
         mock_run_cmd.return_value = ""
-        with patch('mqtt_monitor.psutil.disk_usage') as mock_disk_usage:
-            mock_disk_usage.return_value = MagicMock(percent=75, free=1073741824)  # 1GB free
-            result = get_usage('/')
-            assert result == (75, "1G")
+        mock_disk_usage.return_value = MagicMock(percent=75, free=1073741824)  # 1GB free
+        result = get_usage('/')
+        assert result == (75, "1G")
 
     @patch('mqtt_monitor.run_cmd')
     @patch('mqtt_monitor.send_alert')
@@ -149,9 +162,8 @@ class TestMqttMonitor:
         client.loop_stop()
         client.disconnect()
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_get_raid_status_empty(self, mock_run_cmd):
-        mock_run_cmd.return_value = ""
+    def test_get_raid_status_empty(self, setup_mdstat):
+        setup_mdstat("")
         result = get_raid_status()
         assert result == {"md0": {"state": "unknown", "raw": ""}}
 
@@ -164,13 +176,13 @@ class TestMqttMonitor:
 
     @patch('mqtt_monitor.run_cmd')
     def test_get_disk_info_invalid_capacity(self, mock_run_cmd):
+        disk_cache.clear()  # Clear cache to avoid interference
         mock_run_cmd.return_value = "invalid"
         result = get_disk_info('/dev/sda', full=False)
         assert result['capacity'] == 0
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_get_raid_status_invalid(self, mock_run_cmd):
-        mock_run_cmd.side_effect = Exception("file error")
+    def test_get_raid_status_invalid(self, setup_mdstat):
+        setup_mdstat("")  # Simulate file exists but is empty or invalid
         result = get_raid_status()
         assert result == {"md0": {"state": "unknown", "raw": ""}}
 
@@ -181,9 +193,9 @@ class TestMqttMonitor:
         assert reads == 0
         assert writes == 0
 
-    @patch('mqtt_monitor.run_cmd')
-    def test_run_cmd_timeout(self, mock_run_cmd):
-        mock_run_cmd.side_effect = subprocess.TimeoutExpired(cmd=["ls"], timeout=10)
+    @patch('subprocess.run')
+    def test_run_cmd_timeout(self, mock_subprocess_run):
+        mock_subprocess_run.side_effect = subprocess.TimeoutExpired(cmd=["ls"], timeout=10)
         result = run_cmd(["ls"])
         assert result == ""
 

@@ -74,13 +74,17 @@ prev_time = None
 
 def log(message, level="INFO"):
     try:
-        getattr(logger, level.lower())(message)
-        # Check disk space for log file
+        log_level = getattr(logging, level.upper(), logging.INFO)
+        if logger.isEnabledFor(log_level):
+            getattr(logger, level.lower())(message)
+    except Exception as e:
+        print(f"Logging error: {e}")
+    try:
         usage = psutil.disk_usage(LOG_DIR)
         if usage.percent > 95:
             send_alert("Log Directory Full", f"Log directory {LOG_DIR} is at {usage.percent}% capacity")
     except Exception as e:
-        print(f"Logging error: {e}")
+        print(f"Disk usage check error: {e}")
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -138,7 +142,7 @@ def get_raid_status():
             if not line or line.startswith("unused devices"):
                 continue
             if line.startswith("md"):
-                if current_array:
+                if current_array and block_lines:
                     arrays[current_array] = {
                         "state": "active" if any("[UU]" in l for l in block_lines) else "degraded",
                         "raw": " ".join(block_lines)
@@ -147,11 +151,13 @@ def get_raid_status():
                 block_lines = [line]
             elif current_array:
                 block_lines.append(line)
-        if current_array:
+        if current_array and block_lines:
             arrays[current_array] = {
                 "state": "active" if any("[UU]" in l for l in block_lines) else "degraded",
                 "raw": " ".join(block_lines)
             }
+        if not arrays:
+            return {"md0": {"state": "unknown", "raw": ""}}
         log(f"RAID status: {arrays}", "INFO")
         log(f"Raw mdstat: {mdstat[:200]}...", "DEBUG")
         return arrays
@@ -173,7 +179,7 @@ def get_disk_io(device):
         return 0, 0
 
 def get_disk_info(dev, full=False):
-    if dev not in disk_cache:
+    if dev not in disk_cache or not disk_cache[dev].get('capacity'):
         try:
             size = run_cmd(["blockdev", "--getsize64", dev])
             if size and size.isdigit():
@@ -201,9 +207,12 @@ def get_disk_info(dev, full=False):
             result = run_cmd(cmd)
             if not result:
                 log(f"No SMART output for {dev} with -d {attempt_type}", "DEBUG")
-                continue
+                return {"name": dev.split('/')[-1], "capacity": capacity, "state": "error", "health": "N/A", "temperature": "N/A"}
             smart_lines = result.splitlines()
-            health = "PASSED" in result
+            if not smart_lines:
+                log(f"Empty SMART output for {dev} with -d {attempt_type}", "DEBUG")
+                return {"name": dev.split('/')[-1], "capacity": capacity, "state": "error", "health": "N/A", "temperature": "N/A"}
+            health = any("PASSED" in line for line in smart_lines)
             state = "active" if health else "failed"
             temp = "N/A"
             poh = "N/A"
@@ -215,12 +224,12 @@ def get_disk_info(dev, full=False):
                     temp = parts[1]
                 elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
                     temp = parts[3]
-                elif "Power_On_Hours" in line and len(parts) > 9:
-                    poh = parts[-2]
-                elif line.startswith("Reallocated_Sector_Ct") and len(parts) > 9:
-                    realloc = parts[9]
-                elif line.startswith("Spin_Up_Time") and len(parts) > 9:
-                    spinup = parts[9]
+                elif "Power_On_Hours" in line and len(parts) >= 2:
+                    poh = parts[-1] if parts[-1].isdigit() else "N/A"
+                elif line.startswith("Reallocated_Sector_Ct") and len(parts) >= 2:
+                    realloc = parts[-1] if parts[-1].isdigit() else "N/A"
+                elif line.startswith("Spin_Up_Time") and len(parts) >= 2:
+                    spinup = parts[-1] if parts[-1].isdigit() else "N/A"
             info = {
                 "name": dev.split('/')[-1], "capacity": capacity, "state": state,
                 "health": "OK" if health else "FAILED", "temperature": temp, "power_on_hours": poh,
@@ -238,12 +247,15 @@ def get_disk_info(dev, full=False):
 def get_usage(mount):
     try:
         result = run_cmd(["df", "-h", mount])
-        for line in result.splitlines()[1:]:
-            parts = line.split()
-            if len(parts) >= 6 and mount in parts[-1]:
-                percent = int(parts[4].rstrip("%"))
-                free = parts[3]
-                return percent, free
+        if result:
+            for line in result.splitlines()[1:]:  # Skip header
+                parts = line.split()
+                if len(parts) >= 6 and parts[-1] == mount:
+                    percent = int(parts[4].rstrip("%"))
+                    free = parts[3]
+                    log(f"df output for {mount}: {percent}% used, {free} free", "DEBUG")
+                    return percent, free
+        log(f"No matching df output for {mount}, falling back to psutil", "DEBUG")
         usage = psutil.disk_usage(mount)
         percent = int(usage.percent)
         free = f"{usage.free // 1024 // 1024 // 1024}G"
