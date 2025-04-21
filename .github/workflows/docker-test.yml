@@ -43,12 +43,15 @@ jobs:
       - name: Debug config file permissions
         run: |
           docker run --rm mqtt-monitor:test ls -l /app/mqtt-monitor.conf
+      - name: Debug config file path
+        run: |
+          docker run --rm mqtt-monitor:test readlink -f /app/mqtt-monitor.conf
       - name: Debug config file
         run: |
           docker run --rm mqtt-monitor:test cat /app/mqtt-monitor.conf
       - name: Run integration tests
         run: |
-          docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
+          docker run --network host mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
       - name: Stop Mosquitto container
         if: always()
         run: |
