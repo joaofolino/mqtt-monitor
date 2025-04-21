@@ -33,8 +33,6 @@ else
 fi
 
 # Set permissions
-chown mqtt-monitor:disk /var/log/mqtt-monitor.log 2>/dev/null || touch /var/log/mqtt-monitor.log
-chmod 664 /var/log/mqtt-monitor.log
 chown mqtt-monitor:disk "$CONFIG_FILE"
 chmod 660 "$CONFIG_FILE"
 chown mqtt-monitor:disk "$CONFIG_NEW"
@@ -47,9 +45,6 @@ if [ ! -f /etc/logrotate.d/mqtt-monitor ]; then
     cp /usr/share/mqtt-monitor/mqtt-monitor.logrotate /etc/logrotate.d/mqtt-monitor
     chmod 644 /etc/logrotate.d/mqtt-monitor
 fi
-
-# Install Python dependencies
-pip3 install paho-mqtt psutil openpyxl requests
 
 # Enable and start service
 systemctl enable mqtt-monitor.service

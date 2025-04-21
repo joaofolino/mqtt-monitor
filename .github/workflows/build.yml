@@ -1,4 +1,4 @@
-name: Build .deb
+name: Build Debian Package
 on:
   push:
     branches: [master]
@@ -7,9 +7,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper
-      - name: Create .deb structure
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev debhelper
+      - name: Extract version from changelog
+        id: get_version
+        run: |
+          VERSION=$(dpkg-parsechangelog -S Version)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Build Debian package
         run: |
           mkdir -p mqtt-monitor_deb/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system,usr/share/mqtt-monitor}
           cp src/mqtt_monitor.py mqtt-monitor_deb/usr/bin/
@@ -30,10 +37,9 @@ jobs:
           chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt-monitor.logrotate
           chmod 644 mqtt-monitor_deb/DEBIAN/{control,conffiles,changelog}
           chmod 755 mqtt-monitor_deb/DEBIAN/{postinst,prerm,postrm}
-      - name: Build .deb
-        run: dpkg-deb --build mqtt-monitor_deb mqtt-monitor_master.deb
+          dpkg-deb --build mqtt-monitor_deb mqtt-monitor_${{ steps.get_version.outputs.version }}.deb
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mqtt-monitor-deb
-          path: mqtt-monitor_master.deb
+          path: mqtt-monitor_*.deb
