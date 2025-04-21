@@ -14,7 +14,7 @@ import logging
 
 # Load configuration
 config = configparser.ConfigParser()
-config.read('/etc/mqtt-monitor/mqtt-monitor.conf')
+config.read(os.getenv('CONFIG_PATH', '/etc/mqtt-monitor/mqtt-monitor.conf'))
 
 # General configs
 ENABLE_EMAIL = config.getboolean('monitor', 'enable_email')
