@@ -4,12 +4,7 @@ on:
     branches: [master]
   workflow_dispatch:
 jobs:
-  checkout:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
   integration-test:
-    needs: checkout
     runs-on: ubuntu-22.04
     services:
       mosquitto:
@@ -27,9 +22,10 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Mosquitto credentials
-        run: |
-          docker exec $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0") mosquitto_passwd -b /mosquitto/config/passwd test test
+#      - name: Set up Mosquitto credentials
+#        run: |
+#          docker exec $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0") mosquitto_passwd -b /mosquitto/config/passwd test test
+#          docker restart $(docker ps -q -f "ancestor=eclipse-mosquitto:2.0")
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build test image
