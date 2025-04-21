@@ -72,6 +72,16 @@ disk_cache = {}
 prev_io = {}
 prev_time = None
 
+def log(message, level="INFO"):
+    try:
+        getattr(logger, level.lower())(message)
+        # Check disk space for log file
+        usage = psutil.disk_usage(LOG_DIR)
+        if usage.percent > 95:
+            send_alert("Log Directory Full", f"Log directory {LOG_DIR} is at {usage.percent}% capacity")
+    except Exception as e:
+        print(f"Logging error: {e}")
+
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         log("Connected to MQTT broker", "INFO")
@@ -89,18 +99,6 @@ def connect_mqtt():
         client.loop_start()
     except Exception as e:
         log(f"Failed to connect to MQTT broker: {e}", "ERROR")
-
-connect_mqtt()
-
-def log(message, level="INFO"):
-    try:
-        getattr(logger, level.lower())(message)
-        # Check disk space for log file
-        usage = psutil.disk_usage(LOG_DIR)
-        if usage.percent > 95:
-            send_alert("Log Directory Full", f"Log directory {LOG_DIR} is at {usage.percent}% capacity")
-    except Exception as e:
-        print(f"Logging error: {e}")
 
 def send_alert(subject, body):
     if not ENABLE_EMAIL:
@@ -265,6 +263,9 @@ def check_package_version():
     return False
 
 def main():
+    # Connect to MQTT
+    connect_mqtt()
+
     # Check package version
     if check_package_version():
         return  # Restarted by apt

@@ -35,6 +35,9 @@ jobs:
           echo "Mosquitto failed to become healthy"
           docker logs mosquitto
           exit 1
+      - name: Debug MQTT connectivity
+        run: |
+          docker run --rm --network host mqtt-monitor:test mosquitto_sub -h localhost -p 1883 -u test -P test -t test/mqtt-monitor/# -C 1 -W 5 || echo "MQTT connectivity test failed"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build test image
