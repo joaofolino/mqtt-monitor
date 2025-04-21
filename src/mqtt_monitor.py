@@ -14,11 +14,12 @@ import logging
 
 # Load configuration
 config = configparser.ConfigParser()
-config_path = os.getenv('CONFIG_PATH', '/etc/mqtt-monitor/mqtt-monitor.conf')
-print(f"Loading config from: {config_path}")  # Debug
+config_path = os.getenv('CONFIG_PATH', '/etc/mqtt-monitor')
+config_file_path = config_path + "/mqtt-monitor.conf"
+print(f"Loading config from: {config_file_path}")  # Debug
 try:
-    if not config.read(config_path):
-        raise FileNotFoundError(f"Config file {config_path} not found or unreadable")
+    if not config.read(config_file_path):
+        raise FileNotFoundError(f"Config file {config_file_path} not found or unreadable")
 except Exception as e:
     print(f"Error loading config: {e}")
     raise
@@ -209,8 +210,10 @@ def get_disk_info(dev, full=False):
                 log(f"No SMART output for {dev} with -d {attempt_type}", "DEBUG")
                 return {"name": dev.split('/')[-1], "capacity": capacity, "state": "error", "health": "N/A", "temperature": "N/A"}
             smart_lines = result.splitlines()
-            if not smart_lines:
-                log(f"Empty SMART output for {dev} with -d {attempt_type}", "DEBUG")
+            # Check for valid SMART health status
+            has_valid_status = any("PASSED" in line or "FAILED" in line for line in smart_lines)
+            if not smart_lines or not has_valid_status:
+                log(f"Invalid or empty SMART output for {dev} with -d {attempt_type}: {result[:100]}", "DEBUG")
                 return {"name": dev.split('/')[-1], "capacity": capacity, "state": "error", "health": "N/A", "temperature": "N/A"}
             health = any("PASSED" in line for line in smart_lines)
             state = "active" if health else "failed"
@@ -235,7 +238,7 @@ def get_disk_info(dev, full=False):
                 "health": "OK" if health else "FAILED", "temperature": temp, "power_on_hours": poh,
                 "reallocated_sectors": realloc, "spinup_count": spinup
             }
-            if not health:
+            if not health and any("FAILED" in line for line in smart_lines):
                 send_alert(f"Disk {dev} Failed", f"SMART health check failed: {result[:200]}")
             return info
         except Exception as e:

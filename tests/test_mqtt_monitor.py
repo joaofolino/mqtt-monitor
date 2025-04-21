@@ -5,15 +5,21 @@ import subprocess
 import unittest
 import os
 from unittest.mock import patch, MagicMock
+
+import sys
+sys.path.insert(0, "/app/src")
+sys.path.insert(0, "./src")
+
 from mqtt_monitor import get_disk_info, get_raid_status, get_disk_io, get_usage, send_alert, log, run_cmd, check_package_version, disk_cache
 
 @pytest.fixture
 def setup_mdstat(tmp_path):
-    mdstat_path = "/app/tests/mdstat"
+    mdstat_path = os.getenv('CONFIG_PATH', '/app/tests') + "/mdstat"
     def _write_mdstat(content):
         with open(mdstat_path, "w") as f:
             f.write(content)
     return _write_mdstat
+
 
 class TestMqttMonitor:
     @patch('mqtt_monitor.run_cmd')
@@ -89,12 +95,17 @@ Filesystem      Size  Used Avail Use% Mounted on
         send_alert("Test Alert", "Test Body")
         mock_send_alert.assert_not_called()
 
-    @patch('logging.Logger.info')
-    def test_log_info(self, mock_log):
-        log("Test info", "INFO")
-        mock_log.assert_called_with("Test info")
+    def test_log_info(self):
+        # Create a fresh logger for the test
+        test_logger = logging.getLogger('test_mqtt_monitor')
+        test_logger.setLevel(logging.DEBUG)
+        test_logger.handlers = [logging.NullHandler()]
+        with patch('mqtt_monitor.logger', test_logger):
+            with patch.object(test_logger, 'info') as mock_log:
+                log("Test info", "INFO")
+                mock_log.assert_called_with("Test info")
 
-    @patch('logging.Logger.debug')
+    @patch('mqtt_monitor.logger.debug')
     def test_log_debug_disabled(self, mock_log):
         global LOG_LEVEL
         LOG_LEVEL = "INFO"

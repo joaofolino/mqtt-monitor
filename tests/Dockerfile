@@ -13,10 +13,5 @@ RUN pip3 install -r requirements.txt pytest
 
 COPY src/ /app/src/
 COPY tests/ /app/tests/
-COPY tests/mqtt-monitor.conf /app/mqtt-monitor.conf
 
-# Ensure config file is readable
-RUN chmod 644 /app/mqtt-monitor.conf
-
-ENV PYTHONPATH=/app/src
-ENV CONFIG_PATH=/app/mqtt-monitor.conf
+ENV CONFIG_PATH=/app/tests
