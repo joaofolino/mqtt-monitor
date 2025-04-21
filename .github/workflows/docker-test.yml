@@ -8,12 +8,20 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Verify passwd file
+        run: |
+          ls -l ${{ github.workspace }}/tests/mosquitto/config
+          cat ${{ github.workspace }}/tests/mosquitto/config/passwd
       - name: Build custom Mosquitto image
         run: |
           docker build -t custom-mosquitto:test -f ${{ github.workspace }}/tests/mosquitto/Dockerfile ${{ github.workspace }}/tests/mosquitto
       - name: Run Mosquitto container
         run: |
-          docker run -d --name mosquitto -p 1883:1883 -v mosquitto-data:/mosquitto/data -v mosquitto-log:/mosquitto/log --health-cmd "mosquitto_sub -t 'test' -u test -P test" --health-interval 10s --health-timeout 5s --health-retries 5 custom-mosquitto:test
+          docker run -d --name mosquitto -p 1883:1883 -v mosquitto-data:/mosquitto/data -v mosquitto-log:/mosquitto/log --health-cmd "mosquitto_ctrl dynsec getDefaultACLAccess" --health-interval 10s --health-timeout 5s --health-retries 5 custom-mosquitto:test
+      - name: Debug Mosquitto logs
+        run: |
+          sleep 5
+          docker logs mosquitto
       - name: Wait for Mosquitto to be healthy
         run: |
           for i in {1..30}; do
