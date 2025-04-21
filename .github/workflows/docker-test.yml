@@ -43,15 +43,6 @@ jobs:
       - name: Build test image
         run: |
           docker build -t mqtt-monitor:test -f ${{ github.workspace }}/tests/Dockerfile ${{ github.workspace }}
-      - name: Debug config file permissions
-        run: |
-          docker run --rm mqtt-monitor:test ls -l /app/mqtt-monitor.conf
-      - name: Debug config file path
-        run: |
-          docker run --rm mqtt-monitor:test readlink -f /app/mqtt-monitor.conf
-      - name: Debug config file
-        run: |
-          docker run --rm mqtt-monitor:test cat /app/mqtt-monitor.conf
       - name: Run integration tests
         run: |
           docker run --network host mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
