@@ -42,7 +42,7 @@ jobs:
           docker build -t mqtt-monitor:test -f ${{ github.workspace }}/tests/Dockerfile ${{ github.workspace }}
       - name: Run integration tests
         run: |
-          docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt-monitor.py
+          docker run --network host -v ${{ github.workspace }}:/app mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
       - name: Stop Mosquitto container
         if: always()
         run: |

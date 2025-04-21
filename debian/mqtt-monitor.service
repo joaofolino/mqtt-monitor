@@ -3,7 +3,7 @@ Description=Monitor SMART data, RAID, and system metrics via MQTT
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /usr/bin/mqtt-monitor.py
+ExecStart=/usr/bin/python3 /usr/bin/mqtt_monitor.py
 Restart=always
 User=mqtt-monitor
 Group=disk

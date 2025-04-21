@@ -19,4 +19,4 @@ jobs:
           pylint src/*.py
       - name: Run unit tests
         run: |
-          pytest tests/test_mqtt-monitor.py --ignore=tests/test_mqtt_publish_integration
+          pytest tests/test_mqtt_monitor.py --ignore=tests/test_mqtt_publish_integration
