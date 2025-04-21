@@ -4,7 +4,18 @@ on:
     branches: [master]
   workflow_dispatch:
 jobs:
+  where-ma-files:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: List
+        run: |
+          ls -l ${{ github.workspace }}
+          ls -l ${{ github.workspace }}/tests
+          ls -l ${{ github.workspace }}/tests/mosquitto
+          ls -l ${{ github.workspace }}/tests/mosquitto/config
   integration-test:
+    needs: where-ma-files
     runs-on: ubuntu-22.04
     services:
       mosquitto:
@@ -16,7 +27,7 @@ jobs:
           - mosquitto-data:/mosquitto/data
           - mosquitto-log:/mosquitto/log
         options: >-
-          --health-cmd "ls -l /mosquitto/config/"
+          --health-cmd "mosquitto_sub -t 'test' -u test -P test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
