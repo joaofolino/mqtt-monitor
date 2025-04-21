@@ -46,6 +46,9 @@ jobs:
       - name: Run integration tests
         run: |
           docker run --network host mqtt-monitor:test pytest /app/tests/test_mqtt_monitor.py
+      - name: Check log file
+        run: |
+          docker run --rm mqtt-monitor:test cat /app/tests/mqtt-monitor.log
       - name: Stop Mosquitto container
         if: always()
         run: |
