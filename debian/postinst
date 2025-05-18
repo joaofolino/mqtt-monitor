@@ -1,10 +1,9 @@
 #!/bin/sh
 set -e
 
-# Create mqtt-monitor user
+# Create mqtt-monitor user for configuration ownership
 if ! id mqtt-monitor >/dev/null 2>&1; then
     useradd -r -s /bin/false mqtt-monitor
-    usermod -aG disk mqtt-monitor
 fi
 
 # Handle configuration file
@@ -33,11 +32,11 @@ else
 fi
 
 # Set permissions
-chown mqtt-monitor:disk "$CONFIG_FILE"
+chown root:mqtt-monitor "$CONFIG_FILE"
 chmod 660 "$CONFIG_FILE"
-chown mqtt-monitor:disk "$CONFIG_NEW"
+chown root:mqtt-monitor "$CONFIG_NEW"
 chmod 660 "$CONFIG_NEW"
-chown mqtt-monitor:disk "$CONFIG_OLD" 2>/dev/null || true
+chown root:mqtt-monitor "$CONFIG_OLD" 2>/dev/null || true
 chmod 660 "$CONFIG_OLD" 2>/dev/null || true
 
 # Install logrotate configuration if it doesn't exist
