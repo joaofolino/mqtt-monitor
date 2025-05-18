@@ -234,7 +234,8 @@ def parse_smart_output(config, logger, result, dev):
     smart_status = None
     for line in smart_lines:
         if "SMART overall-health self-assessment test result:" in line:
-            status = line.split(":")[-1].strip().upper()
+            parts = line.split()
+            status = parts[5]
             if status in ["PASSED", "FAILED", "UNKNOWN"]:
                 smart_status = status
             else:
@@ -252,15 +253,17 @@ def parse_smart_output(config, logger, result, dev):
     spinup = None
     for line in smart_lines:
         parts = line.split()
-        if line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
-            temp = int(parts[1])
-        elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
+        if "Temperature_Celsius" in line and len(parts) >= 10 and parts[9].isdigit():
+            temp = int(parts[9])
+        elif line.startswith("Temperature Sensor 2:") and len(parts) > 3 and parts[3].isdigit():
             temp = int(parts[3])
         elif "Power_On_Hours" in line and len(parts) >= 10 and parts[9].isdigit():
             poh = int(parts[9])
-        elif line.startswith("Reallocated_Sector_Ct") and len(parts) >= 10 and parts[9].isdigit():
+        elif line.startswith("Power On Hours:") and len(parts) > 3 and parts[3].isdigit():
+            temp = int(parts[3])
+        elif "Reallocated_Sector_Ct" in line and len(parts) >= 10 and parts[9].isdigit():
             realloc = int(parts[9])
-        elif line.startswith("Spin_Up_Time") and len(parts) >= 10 and parts[9].isdigit():
+        elif "Spin_Up_Time" in line and len(parts) >= 10 and parts[9].isdigit():
             spinup = int(parts[9])
         elif "Current_Pending_Sector" in line and len(parts) >= 10 and parts[9].isdigit():
             log(config, logger, f"{dev} Pending Sectors: {parts[9]}", "INFO")
