@@ -168,15 +168,19 @@ def send_alert(config, logger, subject, body):
         log(config, logger, f"Failed to send alert {subject}: {e}", "ERROR")
 
 def run_cmd(config, logger, cmd):
-    """Run a shell command and return its output."""
+    """Run a shell command and return its output and return code."""
     try:
         log(config, logger, f"Executing command: {' '.join(cmd)}", "DEBUG")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
-        log(config, logger, f"Command {' '.join(cmd)} output: {result.stdout[:100]}...", "DEBUG")
-        return result.stdout.strip()
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=10)
+        log(config, logger, f"Command {' '.join(cmd)} output: {result.stdout[:100]}... (returncode: {result.returncode})", "DEBUG")
+        if result.returncode == 32 and "smartctl" in cmd[0]:
+            log(config, logger, f"Some attributes  have  been <= threshold at some time in the past for device {' '.join(cmd)}, processing output", "WARN")
+        elif result.returncode != 0:
+            log(config, logger, f"Command {' '.join(cmd)} error: returncode={result.returncode}, stderr={result.stderr}", "ERROR")
+        return result.stdout.strip(), result.returncode
     except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         log(config, logger, f"Command {' '.join(cmd)} error: {e} (stderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'})", "ERROR")
-        return ""
+        return "", -1
 
 def get_raid_status(config, logger):
     """Get RAID array status from mdstat."""
@@ -234,8 +238,7 @@ def parse_smart_output(config, logger, result, dev):
     smart_status = None
     for line in smart_lines:
         if "SMART overall-health self-assessment test result:" in line:
-            parts = line.split()
-            status = parts[5]
+            status = line.split(":")[-1].strip().upper()
             if status in ["PASSED", "FAILED", "UNKNOWN"]:
                 smart_status = status
             else:
@@ -248,25 +251,30 @@ def parse_smart_output(config, logger, result, dev):
                 "reallocated_sectors": None, "spinup_count": None}
     state = "active" if smart_status == "PASSED" else "warning" if smart_status == "FAILED" else "error"
     temp = None
+    temps = []
     poh = None
     realloc = None
     spinup = None
     for line in smart_lines:
         parts = line.split()
         if "Temperature_Celsius" in line and len(parts) >= 10 and parts[9].isdigit():
-            temp = int(parts[9])
+            temps.append(int(parts[9]))
         elif line.startswith("Temperature Sensor 2:") and len(parts) > 3 and parts[3].isdigit():
-            temp = int(parts[3])
+            temps.append(int(parts[3]))
+        elif line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
+            temps.append(int(parts[1]))
         elif "Power_On_Hours" in line and len(parts) >= 10 and parts[9].isdigit():
             poh = int(parts[9])
         elif line.startswith("Power On Hours:") and len(parts) > 3 and parts[3].isdigit():
-            temp = int(parts[3])
+            poh = int(parts[3])
         elif "Reallocated_Sector_Ct" in line and len(parts) >= 10 and parts[9].isdigit():
             realloc = int(parts[9])
         elif "Spin_Up_Time" in line and len(parts) >= 10 and parts[9].isdigit():
             spinup = int(parts[9])
         elif "Current_Pending_Sector" in line and len(parts) >= 10 and parts[9].isdigit():
             log(config, logger, f"{dev} Pending Sectors: {parts[9]}", "INFO")
+    if temps:
+        temp = max(temps)
     info = {
         "state": state,
         "smart_status": smart_status,
@@ -285,7 +293,7 @@ def get_disk_info(config, logger, dev, full=False):
     disk_name = dev.split('/')[-1]
     if dev not in disk_cache or not disk_cache[dev].get('capacity'):
         try:
-            size = run_cmd(config, logger, ["blockdev", "--getsize64", dev])
+            size, _ = run_cmd(config, logger, ["blockdev", "--getsize64", dev])
             if size and size.isdigit():
                 disk_cache[dev] = {"capacity": size}
             else:
@@ -307,17 +315,20 @@ def get_disk_info(config, logger, dev, full=False):
                 "smart_status": None, "temperature": None, "power_on_hours": None,
                 "reallocated_sectors": None, "spinup_count": None}
     # Try multiple device types for SMART data
-    dev_types = ["nvme", "auto"] if "nvme" in dev else ["sat", "scsi", "auto"]
+    dev_types = ["nvme", "auto"] if "nvme" in dev else ["sat", "auto"]
     for dev_type in dev_types:
         try:
             cmd = ["smartctl", "-a", "-d", dev_type, dev]
-            result = run_cmd(config, logger, cmd)
+            result, returncode = run_cmd(config, logger, cmd)
             if not result:
                 log(config, logger, f"No SMART output for {dev} with -d {dev_type}", "ERROR")
                 continue
             smart_info = parse_smart_output(config, logger, result, dev)
             smart_info["name"] = disk_name
             smart_info["capacity"] = capacity
+            if returncode == 32:
+                smart_info["state"] = "active"
+                log(config, logger, f"{dev} is in standby, setting state to idle", "INFO")
             return smart_info
         except RuntimeError as e:
             log(config, logger, f"Error getting SMART data for {dev} with -d {dev_type}: {e}", "ERROR")
@@ -330,7 +341,7 @@ def get_disk_info(config, logger, dev, full=False):
 def get_usage(config, logger, mount):
     """Get disk usage for a mount point."""
     try:
-        result = run_cmd(config, logger, ["df", "-h", mount])
+        result, _ = run_cmd(config, logger, ["df", "-h", mount])
         if result:
             for line in result.splitlines()[1:]:
                 parts = line.split()
@@ -357,8 +368,9 @@ def check_package_version(config, logger):
             version = response.json()['tag_name'].lstrip('v')
         else:
             version = config.package_version
-        current_version = run_cmd(config, logger, [
-            "dpkg-query", "--showformat=${Version}", "--show", "mqtt-monitor"]).strip()
+        current_version, _ = run_cmd(config, logger, [
+            "dpkg-query", "--showformat=${Version}", "--show", "mqtt-monitor"])
+        current_version = current_version.strip()
         if current_version != version:
             log(config, logger, f"Updating package from {current_version} to {version}", "INFO")
             deb_url = (
