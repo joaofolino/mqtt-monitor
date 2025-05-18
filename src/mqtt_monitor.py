@@ -175,7 +175,7 @@ def run_cmd(config, logger, cmd):
         log(config, logger, f"Command {' '.join(cmd)} output: {result.stdout[:100]}...", "DEBUG")
         return result.stdout.strip()
     except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
-        log(config, logger, f"Command {' '.join(cmd)} error: {e}", "ERROR")
+        log(config, logger, f"Command {' '.join(cmd)} error: {e} (stderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'})", "ERROR")
         return ""
 
 def get_raid_status(config, logger):
@@ -231,34 +231,50 @@ def get_disk_io(config, logger, device):
 def parse_smart_output(config, logger, result, dev):
     """Parse SMART output into a dictionary."""
     smart_lines = result.splitlines()
-    has_valid_status = any("PASSED" in line or "FAILED" in line for line in smart_lines)
-    if not smart_lines or not has_valid_status:
-        log(config, logger, f"Invalid or empty SMART output for {dev}: {result[:100]}", "DEBUG")
-        return {"state": "error", "health": "N/A", "temperature": "N/A"}
-    health = any("PASSED" in line for line in smart_lines)
-    state = "active" if health else "failed"
-    temp = "N/A"
-    poh = "N/A"
-    realloc = "N/A"
-    spinup = "N/A"
+    smart_status = None
+    for line in smart_lines:
+        if "SMART overall-health self-assessment test result:" in line:
+            status = line.split(":")[-1].strip().upper()
+            if status in ["PASSED", "FAILED", "UNKNOWN"]:
+                smart_status = status
+            else:
+                log(config, logger, f"Unexpected SMART status for {dev}: {status}", "WARNING")
+                smart_status = "UNKNOWN"
+            break
+    if not smart_lines or not smart_status:
+        log(config, logger, f"Invalid or empty SMART output for {dev}: {result[:100]}", "ERROR")
+        return {"state": "error", "smart_status": None, "temperature": None, "power_on_hours": None,
+                "reallocated_sectors": None, "spinup_count": None}
+    state = "active" if smart_status == "PASSED" else "warning" if smart_status == "FAILED" else "error"
+    temp = None
+    poh = None
+    realloc = None
+    spinup = None
     for line in smart_lines:
         parts = line.split()
         if line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
-            temp = parts[1]
+            temp = int(parts[1])
         elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
-            temp = parts[3]
-        elif "Power_On_Hours" in line and len(parts) >= 2:
-            poh = parts[-1] if parts[-1].isdigit() else "N/A"
-        elif line.startswith("Reallocated_Sector_Ct") and len(parts) >= 2:
-            realloc = parts[-1] if parts[-1].isdigit() else "N/A"
-        elif line.startswith("Spin_Up_Time") and len(parts) >= 2:
-            spinup = parts[-1] if parts[-1].isdigit() else "N/A"
+            temp = int(parts[3])
+        elif "Power_On_Hours" in line and len(parts) >= 10 and parts[9].isdigit():
+            poh = int(parts[9])
+        elif line.startswith("Reallocated_Sector_Ct") and len(parts) >= 10 and parts[9].isdigit():
+            realloc = int(parts[9])
+        elif line.startswith("Spin_Up_Time") and len(parts) >= 10 and parts[9].isdigit():
+            spinup = int(parts[9])
+        elif "Current_Pending_Sector" in line and len(parts) >= 10 and parts[9].isdigit():
+            log(config, logger, f"{dev} Pending Sectors: {parts[9]}", "INFO")
     info = {
-        "state": state, "health": "OK" if health else "FAILED", "temperature": temp,
-        "power_on_hours": poh, "reallocated_sectors": realloc, "spinup_count": spinup
+        "state": state,
+        "smart_status": smart_status,
+        "temperature": temp,
+        "power_on_hours": poh,
+        "reallocated_sectors": realloc,
+        "spinup_count": spinup
     }
-    if not health and any("FAILED" in line for line in smart_lines):
-        send_alert(config, logger, f"Disk {dev} Failed", f"SMART health check failed: {result[:200]}")
+    if state in ["warning", "error"]:
+        send_alert(config, logger, f"Disk {dev} SMART Issue",
+                   f"SMART status: {smart_status}, Output: {result[:200]}")
     return info
 
 def get_disk_info(config, logger, dev, full=False):
@@ -285,26 +301,28 @@ def get_disk_info(config, logger, dev, full=False):
         return {"name": disk_name, "capacity": capacity, "state": "unknown"}
     if dev == "/dev/md1":
         return {"name": disk_name, "capacity": capacity, "state": "unknown",
-                "health": "N/A", "temperature": "N/A"}
-    dev_type = "nvme" if "nvme" in dev else "scsi"
-    for attempt_type in [dev_type, "auto"]:
+                "smart_status": None, "temperature": None, "power_on_hours": None,
+                "reallocated_sectors": None, "spinup_count": None}
+    # Try multiple device types for SMART data
+    dev_types = ["nvme", "auto"] if "nvme" in dev else ["sat", "scsi", "auto"]
+    for dev_type in dev_types:
         try:
-            cmd = ["smartctl", "-a", "-d", attempt_type, dev]
+            cmd = ["smartctl", "-a", "-d", dev_type, dev]
             result = run_cmd(config, logger, cmd)
             if not result:
-                log(config, logger, f"No SMART output for {dev} with -d {attempt_type}", "DEBUG")
-                return {"name": disk_name, "capacity": capacity, "state": "error",
-                        "health": "N/A", "temperature": "N/A"}
+                log(config, logger, f"No SMART output for {dev} with -d {dev_type}", "ERROR")
+                continue
             smart_info = parse_smart_output(config, logger, result, dev)
             smart_info["name"] = disk_name
             smart_info["capacity"] = capacity
             return smart_info
         except RuntimeError as e:
-            log(config, logger, f"Error getting SMART data for {dev} with -d {attempt_type}: {e}", "ERROR")
+            log(config, logger, f"Error getting SMART data for {dev} with -d {dev_type}: {e}", "ERROR")
             continue
     log(config, logger, f"Failed to get SMART data for {dev} after all attempts", "ERROR")
     return {"name": disk_name, "capacity": capacity, "state": "error",
-            "health": "N/A", "temperature": "N/A"}
+            "smart_status": None, "temperature": None, "power_on_hours": None,
+            "reallocated_sectors": None, "spinup_count": None}
 
 def get_usage(config, logger, mount):
     """Get disk usage for a mount point."""
@@ -353,8 +371,12 @@ def check_package_version(config, logger):
 
 def setup_sensors(config, client):
     """Set up Home Assistant sensor configurations."""
-    for sensor in ["cpu_usage", "memory_used", "cpu_temp", "md1_usage", "nvme_usage"]:
-        unit = "%" if "usage" in sensor else "°C" if "temp" in sensor else "MB"
+    # Host sensors
+    for sensor, unit in [
+        ("cpu_usage", "%"),
+        ("memory_used", "MB"),
+        ("cpu_temp", "°C")
+    ]:
         client.publish(f"homeassistant/sensor/server_{sensor}/config", json.dumps({
             "name": f"Server {sensor.replace('_', ' ').title()}",
             "state_topic": f"{config.topic_prefix}/host/{sensor}",
@@ -362,12 +384,27 @@ def setup_sensors(config, client):
             "device": {"identifiers": ["server_monitor"], "name": "Server Monitor"},
             "unit_of_measurement": unit
         }), retain=True)
+    # Disk usage sensors for mount points
+    for mount in config.disk_usage_mounts:
+        mount_name = mount.strip('/').replace('/', '_') or 'root'
+        client.publish(f"homeassistant/sensor/server_{mount_name}_usage/config", json.dumps({
+            "name": f"Server {mount_name.replace('_', ' ').title()} Usage",
+            "state_topic": f"{config.topic_prefix}/host/{mount_name}_usage",
+            "unique_id": f"server_{mount_name}_usage",
+            "device": {"identifiers": ["server_monitor"], "name": "Server Monitor"},
+            "unit_of_measurement": "%"
+        }), retain=True)
+    # Disk sensors
     for disk in config.devices:
         disk_name = disk.split('/')[-1]
-        for attr in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
-            unit = "°C" if "temp" in attr else ""
+        for attr, unit in [
+            ("state", ""),
+            ("temperature", "°C"),
+            ("reallocated_sectors", ""),
+            ("spinup_count", "")
+        ]:
             client.publish(f"homeassistant/sensor/disk_{disk_name}_{attr}/config", json.dumps({
-                "name": f"Disk {disk_name} {attr.title()}",
+                "name": f"Disk {disk_name} {attr.replace('_', ' ').title()}",
                 "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{attr}",
                 "unique_id": f"disk_{disk_name}_{attr}",
                 "device": {"identifiers": ["server_monitor"]},
@@ -382,6 +419,7 @@ def setup_sensors(config, client):
                     "device": {"identifiers": ["server_monitor"]},
                     "unit_of_measurement": "KB/s"
                 }), retain=True)
+    # RAID sensors
     for array in config.raid_arrays:
         client.publish(f"homeassistant/sensor/raid_{array}_state/config", json.dumps({
             "name": f"RAID {array} State",
@@ -393,8 +431,14 @@ def setup_sensors(config, client):
 def publish_data(config, logger, client, topic, value, retain=False):
     """Publish data to MQTT topic."""
     try:
+        if value is None:
+            log(config, logger, f"Skipping MQTT publish for {topic}: value is None", "DEBUG")
+            return  # Skip publishing if value is None
+        # Convert numeric values to string, handle valid values only
+        if isinstance(value, (int, float)):
+            value = str(value)
         log(config, logger, f"MQTT publish: {topic} = {value}", "DEBUG")
-        client.publish(topic, str(value), retain=retain)
+        client.publish(topic, value, retain=retain)
     except ConnectionError as e:
         log(config, logger, f"MQTT publish error {topic}: {e}", "ERROR")
         connect_mqtt(config, logger, client)
@@ -419,6 +463,7 @@ def main():
             delta_time = 60.0 if state.prev_time is None else current_time - state.prev_time
             state.prev_time = current_time
             log(config, logger, f"Delta time: {delta_time:.2f}s", "DEBUG")
+            # Host metrics
             publish_data(config, logger, client,
                          f"{config.topic_prefix}/host/cpu_usage", psutil.cpu_percent())
             publish_data(config, logger, client,
@@ -428,6 +473,7 @@ def main():
                 cpu_temp = int(f.read().strip()) / 1000
             publish_data(config, logger, client,
                          f"{config.topic_prefix}/host/cpu_temp", cpu_temp)
+            # Disk I/O
             current_io = {}
             for dev in devices:
                 reads, writes = get_disk_io(config, logger, dev)
@@ -448,6 +494,7 @@ def main():
                     send_alert(config, logger, "md1 Write Spike",
                                f"Write rate: {write_rate:.2f} KB/s")
                 state.prev_io[dev] = (reads, writes)
+            # RAID status
             raid_status = get_raid_status(config, logger)
             for array, status in raid_status.items():
                 if array not in config.raid_arrays:
@@ -464,15 +511,17 @@ def main():
                 if status["state"] == "degraded":
                     send_alert(config, logger, f"RAID {array} Degraded",
                                f"Status: {status['raw']}")
+            # Disk usage
             for mount in config.disk_usage_mounts:
                 usage, free = get_usage(config, logger, mount)
                 mount_name = mount.strip('/').replace('/', '_') or 'root'
                 publish_data(config, logger, client,
                              f"{config.topic_prefix}/host/{mount_name}_usage", usage)
                 log(config, logger, f"{mount}: {usage}% used, {free} free", "INFO")
-                if mount == "/" and usage > config.md1_usage_threshold:
-                    send_alert(config, logger, "md1 Capacity Critical",
-                               f"md1 at {usage}%, only {free} free")
+                if usage > config.md1_usage_threshold:
+                    send_alert(config, logger, f"{mount_name.replace('_', ' ').title()} Capacity Critical",
+                               f"{mount} at {usage}%, only {free} free")
+            # Disk SMART data
             if current_time - last_smart_check >= config.smart_interval:
                 for disk in config.devices:
                     disk_cache[disk] = get_disk_info(config, logger, disk, full=True)
@@ -487,7 +536,7 @@ def main():
                 for key in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
                     publish_data(config, logger, client,
                                  f"{config.topic_prefix}/disk/{disk_name}/{key}",
-                                 info.get(key, "N/A"))
+                                 info.get(key))
                 log(config, logger, f"{disk}: state={info['state']}, "
                                     f"temp={info.get('temperature', 'N/A')}°C", "INFO")
             time.sleep(config.sleep_interval)
