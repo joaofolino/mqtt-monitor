@@ -326,9 +326,9 @@ def get_disk_info(config, logger, dev, full=False):
             smart_info = parse_smart_output(config, logger, result, dev)
             smart_info["name"] = disk_name
             smart_info["capacity"] = capacity
-            if returncode == 32:
+            if returncode == 32 and smart_info["smart_status"] == "PASSED":
                 smart_info["state"] = "active"
-                log(config, logger, f"{dev} is in standby, setting state to idle", "INFO")
+                log(config, logger, f"{dev} has past attribute issue (exit code 32), setting state to active", "WARNING")
             return smart_info
         except RuntimeError as e:
             log(config, logger, f"Error getting SMART data for {dev} with -d {dev_type}: {e}", "ERROR")
