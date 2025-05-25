@@ -173,14 +173,34 @@ def run_cmd(config, logger, cmd):
         log(config, logger, f"Executing command: {' '.join(cmd)}", "DEBUG")
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=10)
         log(config, logger, f"Command {' '.join(cmd)} output: {result.stdout[:100]}... (returncode: {result.returncode})", "DEBUG")
-        if result.returncode == 32 and "smartctl" in cmd[0]:
-            log(config, logger, f"Some attributes  have  been <= threshold at some time in the past for device {' '.join(cmd)}, processing output", "WARN")
-        elif result.returncode != 0:
-            log(config, logger, f"Command {' '.join(cmd)} error: returncode={result.returncode}, stderr={result.stderr}", "ERROR")
         return result.stdout.strip(), result.returncode
     except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
         log(config, logger, f"Command {' '.join(cmd)} error: {e} (stderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'})", "ERROR")
         return "", -1
+
+def parse_smartctl_exit_code(exit_code):
+    """Parse smartctl exit code into boolean flags using bit shifts."""
+    if exit_code == 0:
+        return {
+            "command_line_parse_error": False,
+            "device_open_failed": False,
+            "smart_command_failed": False,
+            "disk_failing": False,
+            "prefail_attributes_threshold": False,
+            "past_attributes_threshold": False,
+            "device_error_log_errors": False,
+            "self_test_log_errors": False
+        }
+    return {
+        "command_line_parse_error": bool(exit_code & (1 << 0)),
+        "device_open_failed": bool(exit_code & (1 << 1)),
+        "smart_command_failed": bool(exit_code & (1 << 2)),
+        "disk_failing": bool(exit_code & (1 << 3)),
+        "prefail_attributes_threshold": bool(exit_code & (1 << 4)),
+        "past_attributes_threshold": bool(exit_code & (1 << 5)),
+        "device_error_log_errors": bool(exit_code & (1 << 6)),
+        "self_test_log_errors": bool(exit_code & (1 << 7))
+    }
 
 def get_raid_status(config, logger):
     """Get RAID array status from mdstat."""
@@ -245,11 +265,27 @@ def parse_smart_output(config, logger, result, dev):
                 log(config, logger, f"Unexpected SMART status for {dev}: {status}", "WARNING")
                 smart_status = "UNKNOWN"
             break
+    info = {
+        "state": "active",
+        "availability": "online",
+        "smart_status": smart_status,
+        "temperature": None,
+        "power_on_hours": None,
+        "reallocated_sectors": None,
+        "spinup_count": None
+    }
     if not smart_lines or not smart_status:
         log(config, logger, f"Invalid or empty SMART output for {dev}: {result[:100]}", "ERROR")
-        return {"state": "error", "smart_status": None, "temperature": None, "power_on_hours": None,
-                "reallocated_sectors": None, "spinup_count": None}
-    state = "active" if smart_status == "PASSED" else "warning" if smart_status == "FAILED" else "error"
+        info.update({
+            "state": "error",
+            "availability": "offline",
+            "smart_status": None,
+            "temperature": None,
+            "power_on_hours": None,
+            "reallocated_sectors": None,
+            "spinup_count": None
+        })
+        return info
     temp = None
     temps = []
     poh = None
@@ -275,16 +311,14 @@ def parse_smart_output(config, logger, result, dev):
             log(config, logger, f"{dev} Pending Sectors: {parts[9]}", "INFO")
     if temps:
         temp = max(temps)
-    info = {
-        "state": state,
-        "smart_status": smart_status,
+    info.update({
         "temperature": temp,
         "power_on_hours": poh,
         "reallocated_sectors": realloc,
         "spinup_count": spinup
-    }
-    if state in ["warning", "error"]:
-        send_alert(config, logger, f"Disk {dev} SMART Issue",
+    })
+    if smart_status in ["FAILED"]:
+        send_alert(config, logger, f"Disk {dev} SMART Failure",
                    f"SMART status: {smart_status}, Output: {result[:200]}")
     return info
 
@@ -309,13 +343,21 @@ def get_disk_info(config, logger, dev, full=False):
         log(config, logger, f"Invalid capacity for {dev}: {size}", "ERROR")
         capacity = 0
     if not full:
-        return {"name": disk_name, "capacity": capacity, "state": "unknown"}
+        return {"name": disk_name, "capacity": capacity, "state": "unknown", "availability": "online"}
     if dev == "/dev/md1":
-        return {"name": disk_name, "capacity": capacity, "state": "unknown",
-                "smart_status": None, "temperature": None, "power_on_hours": None,
-                "reallocated_sectors": None, "spinup_count": None}
+        return {
+            "name": disk_name,
+            "capacity": capacity,
+            "state": "unknown",
+            "availability": "online",
+            "smart_status": None,
+            "temperature": None,
+            "power_on_hours": None,
+            "reallocated_sectors": None,
+            "spinup_count": None
+        }
     # Try multiple device types for SMART data
-    dev_types = ["nvme", "auto"] if "nvme" in dev else ["sat", "auto"]
+    dev_types = ["nvme", "auto"] if "nvme" in dev else ["sat", "scsi", "auto"]
     for dev_type in dev_types:
         try:
             cmd = ["smartctl", "-a", "-d", dev_type, dev]
@@ -326,17 +368,29 @@ def get_disk_info(config, logger, dev, full=False):
             smart_info = parse_smart_output(config, logger, result, dev)
             smart_info["name"] = disk_name
             smart_info["capacity"] = capacity
-            if returncode == 32 and smart_info["smart_status"] == "PASSED":
-                smart_info["state"] = "active"
-                log(config, logger, f"{dev} has past attribute issue (exit code 32), setting state to active", "WARNING")
+            exit_flags = parse_smartctl_exit_code(returncode)
+            smart_info.update(exit_flags)
+            if exit_flags["disk_failing"]:
+                smart_info["state"] = "warning"
+            elif exit_flags["command_line_parse_error"] or exit_flags["device_open_failed"] or exit_flags["smart_command_failed"]:
+                smart_info["state"] = "error"
+                smart_info["availability"] = "offline"
             return smart_info
         except RuntimeError as e:
             log(config, logger, f"Error getting SMART data for {dev} with -d {dev_type}: {e}", "ERROR")
             continue
     log(config, logger, f"Failed to get SMART data for {dev} after all attempts", "ERROR")
-    return {"name": disk_name, "capacity": capacity, "state": "error",
-            "smart_status": None, "temperature": None, "power_on_hours": None,
-            "reallocated_sectors": None, "spinup_count": None}
+    return {
+        "name": disk_name,
+        "capacity": capacity,
+        "state": "error",
+        "availability": "offline",
+        "smart_status": None,
+        "temperature": None,
+        "power_on_hours": None,
+        "reallocated_sectors": None,
+        "spinup_count": None
+    }
 
 def get_usage(config, logger, mount):
     """Get disk usage for a mount point."""
@@ -416,14 +470,18 @@ def setup_sensors(config, client):
             ("state", ""),
             ("temperature", "°C"),
             ("reallocated_sectors", ""),
-            ("spinup_count", "")
+            ("spinup_count", ""),
+            ("smart_status", "")
         ]:
             client.publish(f"homeassistant/sensor/disk_{disk_name}_{attr}/config", json.dumps({
                 "name": f"Disk {disk_name} {attr.replace('_', ' ').title()}",
                 "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{attr}",
                 "unique_id": f"disk_{disk_name}_{attr}",
                 "device": {"identifiers": ["server_monitor"]},
-                "unit_of_measurement": unit
+                "unit_of_measurement": unit,
+                "availability_topic": f"{config.topic_prefix}/disk/{disk_name}/availability",
+                "payload_available": '{"state":"online"}',
+                "payload_not_available": '{"state":"offline"}'
             }), retain=True)
         if config.enable_io_mqtt:
             for attr in ["read_rate", "write_rate"]:
@@ -432,8 +490,32 @@ def setup_sensors(config, client):
                     "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{attr}",
                     "unique_id": f"disk_{disk_name}_{attr}",
                     "device": {"identifiers": ["server_monitor"]},
-                    "unit_of_measurement": "KB/s"
+                    "unit_of_measurement": "KB/s",
+                    "availability_topic": f"{config.topic_prefix}/disk/{disk_name}/availability",
+                    "payload_available": '{"state":"online"}',
+                    "payload_not_available": '{"state":"offline"}'
                 }), retain=True)
+        for flag in [
+            "command_line_parse_error",
+            "device_open_failed",
+            "smart_command_failed",
+            "disk_failing",
+            "prefail_attributes_threshold",
+            "past_attributes_threshold",
+            "device_error_log_errors",
+            "self_test_log_errors"
+        ]:
+            client.publish(f"homeassistant/binary_sensor/disk_{disk_name}_{flag}/config", json.dumps({
+                "name": f"Disk {disk_name} {flag.replace('_', ' ').title()}",
+                "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{flag}",
+                "unique_id": f"disk_{disk_name}_{flag}",
+                "device": {"identifiers": ["server_monitor"]},
+                "payload_on": "true",
+                "payload_off": "false",
+                "availability_topic": f"{config.topic_prefix}/disk/{disk_name}/availability",
+                "payload_available": '{"state":"online"}',
+                "payload_not_available": '{"state":"offline"}'
+            }), retain=True)
     # RAID sensors
     for array in config.raid_arrays:
         client.publish(f"homeassistant/sensor/raid_{array}_state/config", json.dumps({
@@ -449,9 +531,9 @@ def publish_data(config, logger, client, topic, value, retain=False):
         if value is None:
             log(config, logger, f"Skipping MQTT publish for {topic}: value is None", "DEBUG")
             return  # Skip publishing if value is None
-        # Convert numeric values to string, handle valid values only
-        if isinstance(value, (int, float)):
-            value = str(value)
+        # Convert numeric values and booleans to string, handle valid values only
+        if isinstance(value, (int, float, bool)):
+            value = str(value).lower()
         log(config, logger, f"MQTT publish: {topic} = {value}", "DEBUG")
         client.publish(topic, value, retain=retain)
     except ConnectionError as e:
@@ -548,11 +630,28 @@ def main():
             for disk in config.devices:
                 disk_name = disk.split('/')[-1]
                 info = disk_cache[disk]
-                for key in ["state", "temperature", "reallocated_sectors", "spinup_count"]:
+                for key in ["state", "temperature", "reallocated_sectors", "spinup_count", "smart_status"]:
                     publish_data(config, logger, client,
                                  f"{config.topic_prefix}/disk/{disk_name}/{key}",
                                  info.get(key))
+                for flag in [
+                    "command_line_parse_error",
+                    "device_open_failed",
+                    "smart_command_failed",
+                    "disk_failing",
+                    "prefail_attributes_threshold",
+                    "past_attributes_threshold",
+                    "device_error_log_errors",
+                    "self_test_log_errors"
+                ]:
+                    publish_data(config, logger, client,
+                                 f"{config.topic_prefix}/disk/{disk_name}/{flag}",
+                                 str(info.get(flag, False)).lower())
+                publish_data(config, logger, client,
+                             f"{config.topic_prefix}/disk/{disk_name}/availability",
+                             json.dumps({"state": info.get("availability")}))
                 log(config, logger, f"{disk}: state={info['state']}, "
+                                    f"smart_status={info.get('smart_status', 'N/A')}, "
                                     f"temp={info.get('temperature', 'N/A')}°C", "INFO")
             time.sleep(config.sleep_interval)
         except (ConnectionError, IOError, RuntimeError) as e:
