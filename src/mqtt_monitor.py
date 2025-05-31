@@ -532,18 +532,20 @@ def setup_sensors(monitor_config, mqtt_client):
             ("max_temperature", "°C"),
             ("reallocated_sectors", ""),
             ("spin_up_count", ""),
-            ("smart_health_status", "")
+            ("smart_health_status", None)
         ]:
-            mqtt_client.publish(f"homeassistant/sensor/disk_{device_name}_{attr}/config", json.dumps({
+            config = {
                 "name": f"Disk {device_name} {attr.replace('_', ' ').title()}",
                 "state_topic": f"{monitor_config.topic_prefix}/disk/{device_name}/{attr}",
                 "unique_id": f"disk_{device_name}_{attr}",
                 "device": {"identifiers": ["server_monitor"]},
-                "unit_of_measurement": unit,
                 "availability_topic": f"{monitor_config.topic_prefix}/disk/{device_name}/availability",
                 "payload_available": "online",
                 "payload_not_available": "offline"
-            }), retain=True)
+            }
+            if unit is not None:
+                config["unit_of_measurement"] = unit
+            mqtt_client.publish(f"homeassistant/sensor/disk_{device_name}_{attr}/config", json.dumps(config), retain=True)
         if monitor_config.enable_io_mqtt:
             for attr, unit in [
                 ("read_kilobytes_per_second", "KB/s"),
