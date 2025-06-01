@@ -1,0 +1,685 @@
+title: Server Monitoring
+path: server-monitoring
+icon: mdi:server
+cards:
+  - type: vertical-stack
+    cards:
+      - type: grid
+        columns: 4
+        square: false
+        cards:
+          - type: gauge
+            entity: sensor.server_monitor_server_cpu_load_percentage
+            name: CPU
+            unit: "%"
+            needle: true
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 50
+              red: 80
+            icon: mdi:cpu-64-bit
+          - type: gauge
+            entity: sensor.server_monitor_server_cpu_temperature_celsius
+            name: CPU
+            unit: °C
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 60
+              red: 80
+            icon: mdi:thermometer
+          - type: gauge
+            entity: sensor.server_monitor_server_memory_used_megabytes
+            name: RAM
+            unit: MB
+            min: 0
+            max: 32000
+            severity:
+              green: 0
+              yellow: 16000
+              red: 28000
+            icon: mdi:memory
+          - type: gauge
+            entity: sensor.server_monitor_server_root_disk_usage_percentage
+            name: /
+            unit: "%"
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 95
+            icon: mdi:harddisk
+          - type: gauge
+            entity: sensor.server_monitor_server_var_log_disk_usage_percentage
+            name: /var/log
+            unit: "%"
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 95
+            icon: mdi:harddisk
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: "## RAID Status"
+      - type: grid
+        columns: 4
+        square: false
+        cards:
+          - type: glance
+            entities:
+              - entity: sensor.server_monitor_raid_md0_status
+                name: RAID md0
+                icon: >
+                  {% if is_state('sensor.server_monitor_raid_md0_status',
+                  'active') %}
+                    mdi:check-circle
+                  {% else %}
+                    mdi:alert-circle
+                  {% endif %}
+            show_state: true
+          - type: glance
+            entities:
+              - entity: sensor.server_monitor_raid_md1_status
+                name: RAID md1
+                icon: >
+                  {% if is_state('sensor.server_monitor_raid_md1_status',
+                  'active') %}
+                    mdi:check-circle
+                  {% else %}
+                    mdi:alert-circle
+                  {% endif %}
+            show_state: true
+          - type: glance
+            entities:
+              - entity: sensor.server_monitor_raid_md2_status
+                name: RAID md2
+                icon: >
+                  {% if is_state('sensor.server_monitor_raid_md2_status',
+                  'active') %}
+                    mdi:check-circle
+                  {% else %}
+                    mdi:alert-circle
+                  {% endif %}
+            show_state: true
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: "## Disk Metrics and Alerts"
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk sda"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_sda_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_sda_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_sda_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_sda_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_sda_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_sda_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sda_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_sda_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sda_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk sdb"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdb_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdb_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdb_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdb_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_sdb_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_sdb_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdb_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_sdb_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdb_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk sdc"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdc_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdc_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdc_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdb_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_sdc_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_sdc_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdc_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_sdc_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdc_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk sdd"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdd_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdd_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdd_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_sdd_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_sdd_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_sdd_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdd_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_sdd_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_sdd_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk nvme0n1"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_nvme0n1_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_nvme0n1_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_nvme0n1_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_nvme0n1_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_nvme0n1_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_nvme0n1_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_nvme0n1_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_nvme0n1_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_nvme0n1_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### Disk md1"
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: gauge
+                entity: sensor.server_monitor_disk_md1_max_temperature
+                name: Temperature
+                unit: °C
+                min: 0
+                max: 70
+                severity:
+                  green: 0
+                  yellow: 40
+                  red: 60
+                icon: mdi:thermometer
+              - type: gauge
+                entity: sensor.server_monitor_disk_md1_busy_time_percentage
+                name: Busy Time
+                unit: "%"
+                min: 0
+                max: 100
+                severity:
+                  green: 0
+                  yellow: 50
+                  red: 80
+                icon: mdi:clock
+              - type: gauge
+                entity: sensor.server_monitor_disk_md1_read_kilobytes_per_second
+                name: Read Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 500
+                  red: 800
+                icon: mdi:download
+              - type: gauge
+                entity: sensor.server_monitor_disk_md1_write_kilobytes_per_second
+                name: Write Rate
+                unit: KB/s
+                min: 0
+                max: 1000
+                severity:
+                  green: 0
+                  yellow: 389
+                  red: 800
+                icon: mdi:upload
+          - square: false
+            type: grid
+            columns: 4
+            cards:
+              - type: glance
+                entities:
+                  - entity: sensor.server_monitor_disk_md1_smart_health_status
+                    name: SMART Health
+                    icon: >
+                      {% if
+                      is_state('sensor.server_monitor_disk_md1_smart_health_status',
+                      'PASSED') %}
+                        mdi:check-circle
+                      {% else %}
+                        mdi:alert-circle
+                      {% endif %}
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_md1_disk_failing
+                    name: Disk Failing
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: >-
+                      binary_sensor.server_monitor_disk_md1_command_line_parse_error
+                    name: Command Error
+                    icon: mdi:alert
+                show_state: true
+              - type: glance
+                entities:
+                  - entity: binary_sensor.server_monitor_disk_md1_device_open_failed
+                    name: Open Failed
+                    icon: mdi:alert
+                show_state: true
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: "## I/O Trends"
+      - type: history-graph
+        title: Disk I/O Rates
+        hours_to_show: 24
+        entities:
+          - entity: sensor.server_monitor_disk_sda_read_kilobytes_per_second
+            name: sda Read
+          - entity: sensor.server_monitor_disk_sda_write_kilobytes_per_second
+            name: sda Write
+          - entity: sensor.server_monitor_disk_sdb_read_kilobytes_per_second
+            name: sdb Read
+          - entity: sensor.server_monitor_disk_sdb_write_kilobytes_per_second
+            name: sdb Write
+          - entity: sensor.server_monitor_disk_sdc_read_kilobytes_per_second
+            name: sdc Read
+          - entity: sensor.server_monitor_disk_sdc_write_kilobytes_per_second
+            name: sdc Write
+          - entity: sensor.server_monitor_disk_sdd_read_kilobytes_per_second
+            name: sdd Read
+          - entity: sensor.server_monitor_disk_sdd_write_kilobytes_per_second
+            name: sdd Write
+          - entity: sensor.server_monitor_disk_nvme0n1_read_kilobytes_per_second
+            name: nvme0n1 Read
+          - entity: sensor.server_monitor_disk_nvme0n1_write_kilobytes_per_second
+            name: nvme0n1 Write
+          - entity: sensor.server_monitor_disk_md1_read_kilobytes_per_second
+            name: md1 Read
+          - entity: sensor.server_monitor_disk_md1_write_kilobytes_per_second
+            name: md1 Write
