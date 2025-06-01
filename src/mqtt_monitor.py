@@ -85,7 +85,7 @@ class MonitorConfig:
     md1_write_spike_threshold: float
     sleep_interval: float
     error_sleep: float
-    subprocess_timeout: float = 10.0
+    subprocess_timeout: float = 10.0  # Added configurable timeout
 
 def load_config(config_path: str = '/etc/mqtt-monitor') -> MonitorConfig:
     """Load configuration from a file.
@@ -110,17 +110,17 @@ def load_config(config_path: str = '/etc/mqtt-monitor') -> MonitorConfig:
             enable_email=config_parser.getboolean('monitor', 'enable_email', fallback=False),
             log_level=config_parser.get('monitor', 'log_level', fallback='INFO'),
             enable_io_mqtt=config_parser.getboolean('monitor', 'enable_io_mqtt', fallback=False),
-            alert_email=config_parser.get('monitor', 'alert_email', fallback=''),
-            smtp_server=config_parser.get('monitor', 'smtp_server', fallback=''),
+            alert_email=config_parser.get('monitor', 'alert_email', fallback='user@example.com'),
+            smtp_server=config_parser.get('monitor', 'smtp_server', fallback='smtp.gmail.com'),
             smtp_port=config_parser.getint('monitor', 'smtp_port', fallback=587),
-            smtp_user=config_parser.get('monitor', 'smtp_user', fallback=''),
-            smtp_pass=config_parser.get('monitor', 'smtp_pass', fallback=''),
+            smtp_user=config_parser.get('monitor', 'smtp_user', fallback='user@example.com'),
+            smtp_pass=config_parser.get('monitor', 'smtp_pass', fallback='your-app-password'),
             package_version=config_parser.get('monitor', 'package_version', fallback='latest'),
-            broker=config_parser.get('mqtt', 'broker'),
-            port=config_parser.getint('mqtt', 'port'),
-            mqtt_user=config_parser.get('mqtt', 'mqtt_user', fallback=''),
-            mqtt_pass=config_parser.get('mqtt', 'mqtt_pass', fallback=''),
-            self_name=config_parser.get('mqtt', 'self_name'),
+            broker=config_parser.get('mqtt', 'broker', fallback='localhost'),
+            port=config_parser.getint('mqtt', 'port', fallback=1883),
+            mqtt_user=config_parser.get('mqtt', 'mqtt_user', fallback='mqtt-user'),
+            mqtt_pass=config_parser.get('mqtt', 'mqtt_pass', fallback='mqtt-password'),
+            self_name=config_parser.get('mqtt', 'self_name', fallback='mqtt-monitor'),
             smart_interval=config_parser.getint('internals', 'smart_interval'),
             topic_prefix=config_parser.get('internals', 'topic_prefix'),
             log_dir=config_parser.get('internals', 'log_dir'),
@@ -206,10 +206,8 @@ def on_connect(monitor_config: MonitorConfig, monitor_logger: logging.Logger, mq
     """
     if rc == 0:
         log(monitor_config, monitor_logger, "Connected to MQTT broker", "INFO")
-        mqtt_client.connected = True  # Set connected flag
     else:
         log(monitor_config, monitor_logger, f"Failed to connect to MQTT broker, code: {rc}", "ERROR")
-        mqtt_client.connected = False
 
 def connect_mqtt(monitor_config: MonitorConfig, monitor_logger: logging.Logger, mqtt_client: mqtt.Client,
                  max_retries: int = 5) -> bool:
@@ -224,9 +222,6 @@ def connect_mqtt(monitor_config: MonitorConfig, monitor_logger: logging.Logger, 
     Returns:
         bool: True if connection successful, False otherwise.
     """
-    if getattr(mqtt_client, 'connected', False):
-        log(monitor_config, monitor_logger, "MQTT client already connected", "DEBUG")
-        return True
     try:
         mqtt_client.username_pw_set(monitor_config.mqtt_user, monitor_config.mqtt_pass)
         mqtt_client.on_connect = lambda c, u, f, r: on_connect(monitor_config, monitor_logger, c, u, f, r)
@@ -234,17 +229,14 @@ def connect_mqtt(monitor_config: MonitorConfig, monitor_logger: logging.Logger, 
             try:
                 mqtt_client.connect(monitor_config.broker, monitor_config.port, 60)
                 mqtt_client.loop_start()
-                mqtt_client.connected = True
                 return True
             except ConnectionError as e:
                 log(monitor_config, monitor_logger, f"Retry {attempt+1}/{max_retries} failed: {e}", "ERROR")
                 time.sleep(2 ** attempt)  # Exponential backoff
         log(monitor_config, monitor_logger, "Failed to connect to MQTT after retries", "ERROR")
-        mqtt_client.connected = False
         return False
     except ConnectionError as e:
         log(monitor_config, monitor_logger, f"Failed to connect to MQTT broker: {e}", "ERROR")
-        mqtt_client.connected = False
         return False
 
 def send_alert(monitor_config: MonitorConfig, monitor_logger: logging.Logger, subject: str, body: str) -> None:
@@ -661,33 +653,24 @@ def check_package_version(monitor_config: MonitorConfig, monitor_logger: logging
         if monitor_config.package_version == "latest":
             response = requests.get(
                 "https://api.github.com/repos/joaofolino/mqtt-monitor/releases/latest", timeout=10)
-            response.raise_for_status()
             version = response.json()['tag_name'].lstrip('v')
         else:
             version = monitor_config.package_version
-        current_version, exit_code = run_cmd(monitor_config, monitor_logger, [
+        current_version, _ = run_cmd(monitor_config, monitor_logger, [
             "dpkg-query", "--showformat=${Version}", "--show", "mqtt-monitor"])
         current_version = current_version.strip()
-        if exit_code != 0:
-            log(monitor_config, monitor_logger, f"Failed to get current package version: exit code {exit_code}", "ERROR")
-            return False
         if current_version != version:
             log(monitor_config, monitor_logger, f"Updating package from {current_version} to {version}", "INFO")
             deb_url = (
                 f"https://github.com/joaofolino/mqtt-monitor/releases/download/"
                 f"v{version}/mqtt-monitor_{version}.deb")
-            try:
-                subprocess.run(["wget", "-O", "/tmp/mqtt-monitor.deb", deb_url], check=False, capture_output=True, text=True)
-                subprocess.run(["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=False, capture_output=True, text=True)
-                log(monitor_config, monitor_logger, f"Updated to version {version}. Restart required.", "INFO")
-                return True
-            except subprocess.SubprocessError as e:
-                log(monitor_config, monitor_logger, f"Failed to update package: {e}", "ERROR")
-                return False
-        return False
-    except (requests.RequestException, KeyError) as e:
-        log(monitor_config, monitor_logger, f"Failed to check package version: {e}", "ERROR")
-        return False
+            subprocess.run(["wget", "-O", "/tmp/mqtt-monitor.deb", deb_url], check=True)
+            subprocess.run(["apt", "install", "-y", "/tmp/mqtt-monitor.deb"], check=True)
+            log(monitor_config, monitor_logger, f"Updated to version {version}", "INFO")
+            return True
+    except (requests.RequestException, subprocess.SubprocessError, KeyError) as e:
+        log(monitor_config, monitor_logger, f"Failed to check/update package version: {e}", "ERROR")
+    return False
 
 def setup_sensors(monitor_config: MonitorConfig, mqtt_client: mqtt.Client) -> None:
     """Set up Home Assistant sensor configurations.
@@ -784,8 +767,7 @@ def setup_sensors(monitor_config: MonitorConfig, mqtt_client: mqtt.Client) -> No
             }),
             "retain": True
         })
-    if messages:
-        mqtt_client.publish_multiple(messages)
+    mqtt_client.publish_multiple(messages)
 
 def publish_data(monitor_config: MonitorConfig, monitor_logger: logging.Logger,
                  mqtt_client: mqtt.Client, messages: List[Dict[str, Any]]) -> None:
@@ -797,9 +779,6 @@ def publish_data(monitor_config: MonitorConfig, monitor_logger: logging.Logger,
         mqtt_client: MQTT client instance.
         messages: List of dictionaries with topic, payload, and retain flag.
     """
-    if not messages:
-        log(monitor_config, monitor_logger, "No messages to publish", "DEBUG")
-        return
     try:
         valid_messages = [
             msg for msg in messages if msg["payload"] is not None
@@ -843,6 +822,9 @@ def main() -> None:
         log(monitor_config, monitor_logger, "Initial MQTT connection failed, exiting", "ERROR")
         sys.exit(1)
 
+    if check_package_version(monitor_config, monitor_logger):
+        return
+
     setup_sensors(monitor_config, mqtt_client)
     device_names = [d.split('/')[-1] for d in monitor_config.devices]
     for device_name in device_names:
@@ -859,7 +841,6 @@ def main() -> None:
         }
     last_smart_check_time = 0
     last_log_dir_check = 0
-    last_version_check = 0
     while True:
         try:
             current_loop_time = time.time()
@@ -869,14 +850,8 @@ def main() -> None:
             monitor_state.previous_loop_time = current_loop_time
             log(monitor_config, monitor_logger, f"Loop time delta: {loop_time_delta:.2f} seconds", "DEBUG")
 
-            # Periodic version check (every hour)
-            if current_loop_time - last_version_check >= 3600:
-                if check_package_version(monitor_config, monitor_logger):
-                    log(monitor_config, monitor_logger, "Package updated, restarting service recommended", "INFO")
-                last_version_check = current_loop_time
-
             # Periodic log directory check
-            if current_loop_time - last_log_dir_check >= 300:
+            if current_loop_time - last_log_dir_check >= 300:  # Check every 5 minutes
                 try:
                     usage = psutil.disk_usage(os.path.abspath(monitor_config.log_dir))
                     if usage.percent > 95:
@@ -938,6 +913,7 @@ def main() -> None:
                     read_count_per_second = read_count_delta / loop_time_delta
                     write_count_per_second = write_count_delta / loop_time_delta
                     busy_time_percentage = (busy_time_seconds / loop_time_delta) * 100 if busy_time_ms else 0.0
+                    # Warn on unrealistic rates (>1GB/s)
                     if read_kilobytes_per_second > 1024 * 1024 or write_kilobytes_per_second > 1024 * 1024:
                         log(monitor_config, monitor_logger, f"Unrealistic I/O rate for {device_name}: "
                                                             f"read={read_kilobytes_per_second:.2f} KB/s, "
@@ -1034,7 +1010,7 @@ def main() -> None:
                     messages.append({
                         "topic": f"{monitor_config.topic_prefix}/disk/{device_name}/{key}",
                         "payload": disk_info.get(key),
-                        "retain": key == "smart_health_status"
+                        "retain": key == "smart_health_status"  # Retain for critical state
                     })
                 for flag in DISK_FLAGS:
                     messages.append({
