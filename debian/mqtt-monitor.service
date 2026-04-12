@@ -7,8 +7,8 @@ ExecStart=/usr/bin/python3 /usr/bin/mqtt_monitor.py
 Restart=always
 User=mqtt-monitor
 Group=disk
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
-AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_SETUID CAP_SETGID
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

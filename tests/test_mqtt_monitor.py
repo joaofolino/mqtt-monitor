@@ -255,8 +255,8 @@ class TestMqttMonitor:
     def test_service_unit_grants_nvme_capabilities(self):
         service_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "debian", "mqtt-monitor.service")
         service_text = open(service_path, "r", encoding="utf-8").read()
-        assert "AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text
-        assert "CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text
+        assert "AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_SETUID CAP_SETGID" in service_text
+        assert "CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_SETUID CAP_SETGID" in service_text
 
     def test_postinst_installs_lxc_helper_sudoers(self):
         postinst_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "debian", "postinst")

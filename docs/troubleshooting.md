@@ -78,9 +78,12 @@ Options:
 - remove the stale entities and let discovery recreate them cleanly
 - or keep them and update the dashboard YAML to the entity IDs Home Assistant actually created
 
-## NVMe SMART Shows As Unavailable
+## NVMe SMART Or LXC Discovery Fails
 
-The packaged service needs `CAP_SYS_ADMIN` and `CAP_SYS_RAWIO` to read NVMe SMART data while still running as the dedicated `mqtt-monitor` user.
+The packaged service needs:
+
+- `CAP_SYS_ADMIN` and `CAP_SYS_RAWIO` for NVMe SMART reads
+- `CAP_SETUID` and `CAP_SETGID` so the bounded systemd unit can invoke the narrow `sudo`-based LXC helper
 
 Check the service definition:
 
@@ -88,7 +91,7 @@ Check the service definition:
 systemctl show -p AmbientCapabilities -p CapabilityBoundingSet mqtt-monitor
 ```
 
-Version `1.0.1-2` and newer include those capabilities in the packaged service file.
+Version `1.1.0-0rc9` and newer include the full capability set for both NVMe and LXC discovery.
 
 ## RAID Status Looks Wrong
 
