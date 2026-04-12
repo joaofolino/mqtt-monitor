@@ -503,7 +503,17 @@ def check_package_version(config, logger):
             ["dpkg-query", "--showformat=${Version}", "--show", "mqtt-monitor"],
         )
         current_version = current_version.strip()
-        if current_version != version:
+        try:
+            comparison = subprocess.run(
+                ["dpkg", "--compare-versions", current_version, "lt", version],
+                check=False,
+            )
+            should_update = comparison.returncode == 0
+            if comparison.returncode not in {0, 1}:
+                should_update = current_version != version
+        except FileNotFoundError:
+            should_update = current_version != version
+        if should_update:
             log(config, logger, f"Updating package from {current_version} to {version}", "INFO")
             deb_url = (
                 f"https://github.com/joaofolino/mqtt-monitor/releases/download/"

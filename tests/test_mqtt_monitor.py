@@ -165,9 +165,24 @@ class TestMqttMonitor:
         with patch("mqtt_monitor_v2.system.requests.get") as mock_requests, patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd, patch("mqtt_monitor_v2.system.subprocess.run") as mock_subprocess_run:
             mock_requests.return_value.json.return_value = {"tag_name": "v1.0.1-2"}
             mock_run_cmd.return_value = ("1.0.1-1", 0)
+            mock_subprocess_run.side_effect = [
+                MagicMock(returncode=0),
+                MagicMock(returncode=0),
+                MagicMock(returncode=0),
+            ]
             updated = check_package_version(config, logger)
         assert updated is True
-        assert mock_subprocess_run.call_count == 2
+        assert mock_subprocess_run.call_count == 3
+
+    def test_check_package_version_does_not_downgrade_newer_rc(self, setup_monitor):
+        config, logger = setup_monitor
+        with patch("mqtt_monitor_v2.system.requests.get") as mock_requests, patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd, patch("mqtt_monitor_v2.system.subprocess.run") as mock_subprocess_run:
+            mock_requests.return_value.json.return_value = {"tag_name": "v1.0.1-2"}
+            mock_run_cmd.return_value = ("1.1.0-0rc1", 0)
+            mock_subprocess_run.return_value = MagicMock(returncode=1)
+            updated = check_package_version(config, logger)
+        assert updated is False
+        assert mock_subprocess_run.call_count == 1
 
     def test_log_level_can_disable_debug(self, setup_monitor):
         config, logger = setup_monitor
