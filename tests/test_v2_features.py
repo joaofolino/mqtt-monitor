@@ -197,10 +197,12 @@ def test_build_dashboard_yaml_includes_v2_sections(tmp_path):
     assert "sensor.disk_sda_capacity_gib" in dashboard_yaml
     assert "heading: Expected Services" in dashboard_yaml
     assert "heading: Disk Heat" in dashboard_yaml
+    assert "heading: Disk I/O" in dashboard_yaml
     assert "heading: Physical Disk Detail" in dashboard_yaml
     assert "name: SMART Health" in dashboard_yaml
     assert "name: Max Temp" in dashboard_yaml
     assert "name: I/O Busy" in dashboard_yaml
+    assert "name: I/O Read (KB/s)" in dashboard_yaml
 
 
 def test_dashboard_entity_prefix_is_sanitized(tmp_path):

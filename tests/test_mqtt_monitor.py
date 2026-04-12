@@ -293,6 +293,13 @@ class TestMqttMonitor:
         device = monitor_device(config)
         assert device["name"] == "Mqtt Monitor"
 
+    def test_monitor_device_name_infers_host_name_from_topic_prefix(self, setup_monitor):
+        config, _ = setup_monitor
+        config.self_name = "mqtt-monitor"
+        config.topic_prefix = "home/server/mqtt-monitor"
+        device = monitor_device(config)
+        assert device["name"] == "Server"
+
     def test_check_package_version_reads_current_version_from_tuple(self, setup_monitor):
         config, logger = setup_monitor
         with patch("mqtt_monitor_v2.system.requests.get") as mock_requests, patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd, patch("mqtt_monitor_v2.system.subprocess.run") as mock_subprocess_run:

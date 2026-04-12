@@ -84,6 +84,7 @@ def load_config(config_path: str = "/etc/mqtt-monitor") -> Config:
             "dashboard_output_path",
             "/var/lib/mqtt-monitor/home-assistant-dashboard.yaml",
         ),
+        home_assistant_display_name=get_option(parser, "home_assistant", "display_name", ""),
         home_assistant_url=get_option(parser, "home_assistant", "url", ""),
         home_assistant_token=get_option(parser, "home_assistant", "token", ""),
         home_assistant_notify_service=get_option(parser, "home_assistant", "notify_service", ""),

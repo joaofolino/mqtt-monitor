@@ -55,6 +55,7 @@ class Config:
     expected_lxc_containers: list[str] = field(default_factory=list)
     generate_dashboard: bool = True
     dashboard_output_path: str = "/var/lib/mqtt-monitor/home-assistant-dashboard.yaml"
+    home_assistant_display_name: str = ""
     home_assistant_url: str = ""
     home_assistant_token: str = ""
     home_assistant_notify_service: str = ""

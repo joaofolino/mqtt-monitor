@@ -23,9 +23,22 @@ def entity_prefix(config) -> str:
 
 def monitor_display_name(config) -> str:
     """Return a human-friendly monitor/device name without duplicate suffixes."""
-    name = re.sub(r"[_-]+", " ", config.self_name).strip()
-    name = re.sub(r"\s+", " ", name).title() or "Monitor"
-    return name if name.endswith("Monitor") else f"{name} Monitor"
+    if config.home_assistant_display_name:
+        name = config.home_assistant_display_name.strip()
+    else:
+        name = inferred_monitor_display_name(config)
+    name = re.sub(r"[_-]+", " ", name).strip()
+    return re.sub(r"\s+", " ", name).title() or "Monitor"
+
+
+def inferred_monitor_display_name(config) -> str:
+    """Infer a host-like display name when the self name is generic."""
+    generic_names = {"mqtt-monitor", "mqtt_monitor", "monitor"}
+    if config.self_name.lower() in generic_names:
+        parts = [part for part in config.topic_prefix.split("/") if part]
+        if len(parts) >= 3 and parts[0] == "home":
+            return parts[1]
+    return config.self_name
 
 
 def disk_entity_slug(disk_name: str) -> str:
@@ -221,15 +234,20 @@ def disk_heat_card(disk) -> dict:
     )
 
 
-def disk_busy_card(disk) -> dict:
-    """Return a disk busy-time gauge."""
-    return gauge_card(
-        f"sensor.disk_{disk.slug}_busy_time_percentage",
-        disk.name,
-        "mdi:harddisk",
-        maximum=100,
-        yellow=20,
-        red=60,
+def disk_activity_score(disk) -> float:
+    """Return a sortable combined throughput score for a disk."""
+    return disk.read_kilobytes_per_second + disk.write_kilobytes_per_second
+
+
+def disk_io_card(disk) -> dict:
+    """Return a compact disk I/O summary card."""
+    return entities_card(
+        f"Disk {disk.name}",
+        [
+            named_entity(f"sensor.disk_{disk.slug}_read_kilobytes_per_second", "I/O Read (KB/s)"),
+            named_entity(f"sensor.disk_{disk.slug}_write_kilobytes_per_second", "I/O Write (KB/s)"),
+            named_entity(f"sensor.disk_{disk.slug}_busy_time_percentage", "I/O Busy (%)"),
+        ],
     )
 
 
@@ -302,7 +320,10 @@ def build_dashboard_view(config, snapshot) -> dict:
         [disk for disk in snapshot.disks if not is_logical_disk(disk) and disk.max_temperature is not None],
         key=lambda disk: (-disk.max_temperature, disk.name),
     )
-    busy_disks = sorted(snapshot.disks, key=lambda disk: (-disk.busy_time_percentage, disk.name))
+    activity_disks = sorted(
+        snapshot.disks,
+        key=lambda disk: (-disk_activity_score(disk), -disk.busy_time_percentage, disk.name),
+    )
 
     overview_cards = [
         {"type": "heading", "heading": "Health", "icon": "mdi:server-network"},
@@ -489,16 +510,9 @@ def build_dashboard_view(config, snapshot) -> dict:
             }
         )
 
-    disk_activity_cards = [{"type": "heading", "heading": "Disk Activity", "icon": "mdi:pulse"}]
-    if busy_disks:
-        disk_activity_cards.append(
-            {
-                "type": "grid",
-                "columns": 3,
-                "square": False,
-                "cards": [disk_busy_card(disk) for disk in busy_disks if disk.busy_time_percentage is not None],
-            }
-        )
+    disk_activity_cards = [{"type": "heading", "heading": "Disk I/O", "icon": "mdi:pulse"}]
+    if activity_disks:
+        disk_activity_cards.extend([disk_io_card(disk) for disk in activity_disks[:4]])
 
     sections = [
         {"cards": overview_cards},

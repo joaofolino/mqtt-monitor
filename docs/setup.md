@@ -113,6 +113,7 @@ To enable notifications, set:
 - `url`
 - `token`
 - optionally `notify_service`
+- optionally `display_name` if you want Home Assistant to show a host-friendly name across entity pickers and history
 
 Persistent notifications can be used on their own, even without a mobile `notify` service.
 

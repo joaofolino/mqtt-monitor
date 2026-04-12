@@ -76,6 +76,7 @@ V2 can notify Home Assistant when issues start and resolve.
 
 Relevant config options:
 
+- `display_name`
 - `url`
 - `token`
 - `notify_service`
@@ -103,10 +104,11 @@ The generated dashboard focuses on:
 
 - host overview
 - active issues
-- filesystems
+- core filesystems
 - RAID arrays
-- LXC containers
-- one card per discovered disk
+- expected versus optional LXC containers
+- disk heat and disk I/O summaries
+- one detailed card per discovered disk
 
 That keeps the default experience useful without requiring custom cards.
 
