@@ -412,3 +412,4 @@ def test_build_dashboard_yaml_sanitizes_disk_names(tmp_path):
 
     assert "sensor.disk_mpatha_part1_capacity_gib" in dashboard_yaml
     assert "sensor.disk_mpatha-part1_capacity_gib" not in dashboard_yaml
+    assert "sensor.disk_mpatha_part1_smart_health_status" not in dashboard_yaml

@@ -527,11 +527,14 @@ def build_dashboard_yaml(config, snapshot) -> str:
             f"        title: Disk {disk.name}",
             "        show_header_toggle: false",
             "        entities:",
-            f"          - sensor.disk_{disk.slug}_smart_health_status",
             f"          - sensor.disk_{disk.slug}_capacity_gib",
-            f"          - sensor.disk_{disk.slug}_max_temperature",
-            f"          - sensor.disk_{disk.slug}_power_on_hours",
         ])
+        if disk.smart_health_status is not None:
+            lines.append(f"          - sensor.disk_{disk.slug}_smart_health_status")
+        if disk.max_temperature is not None:
+            lines.append(f"          - sensor.disk_{disk.slug}_max_temperature")
+        if disk.power_on_hours is not None:
+            lines.append(f"          - sensor.disk_{disk.slug}_power_on_hours")
         if config.enable_io_mqtt:
             lines.extend([
                 f"          - sensor.disk_{disk.slug}_read_kilobytes_per_second",
