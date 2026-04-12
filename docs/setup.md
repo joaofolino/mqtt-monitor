@@ -111,12 +111,29 @@ V2 adds two setup conveniences:
 
 If you want to use the generated dashboard as-is, add the required custom card resources in Home Assistant:
 
+HACS is the simplest path:
+
+- install `Mini Graph Card`
+- install `Plotly Graph Card`
+
+If you prefer a manual install, copy the release bundles into `/config/www` first:
+
+```bash
+mkdir -p /config/www
+wget -O /config/www/mini-graph-card-bundle.js \
+  https://github.com/kalkih/mini-graph-card/releases/download/v0.13.0/mini-graph-card-bundle.js
+wget -O /config/www/plotly-graph-card.js \
+  https://github.com/dbuezas/lovelace-plotly-graph-card/releases/download/v3.3.5/plotly-graph-card.js
+```
+
+Then register the local resources:
+
 ```yaml
 lovelace:
   resources:
-    - url: https://cdn.jsdelivr.net/gh/kalkih/mini-graph-card@v0.13.0/mini-graph-card-bundle.js
+    - url: /local/mini-graph-card-bundle.js
       type: module
-    - url: https://cdn.jsdelivr.net/gh/dbuezas/lovelace-plotly-graph-card@v3.3.5/plotly-graph-card.js
+    - url: /local/plotly-graph-card.js
       type: module
 ```
 

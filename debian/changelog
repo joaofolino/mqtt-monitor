@@ -1,3 +1,10 @@
+mqtt-monitor (1.1.0-0rc16) unstable; urgency=medium
+
+  * Document the generated dashboard's Plotly and sparkline cards using HACS or /local resources instead of broken external CDN examples.
+  * Align the Home Assistant configuration example with same-origin /local module resources for custom cards.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 21:05:00 +0200
+
 mqtt-monitor (1.1.0-0rc15) unstable; urgency=medium
 
   * Publish Home Assistant state_class metadata for key monitor time-series sensors.

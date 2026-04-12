@@ -63,6 +63,41 @@ Example files live under [`examples/home-assistant`](../examples/home-assistant)
 
 This is useful if you want a starting point you can copy into your Home Assistant config and then customize manually.
 
+## Installing Dashboard Card Resources
+
+The generated dashboard uses two custom Lovelace cards:
+
+- `mini-graph-card`
+- `lovelace-plotly-graph-card`
+
+Two supported installation paths are:
+
+1. HACS `(Recommended)`
+   Install `Mini Graph Card` and `Plotly Graph Card` through HACS and let Home Assistant manage the resources.
+2. Manual `/local` install
+   Download the release bundles into `/config/www` and register `/local/mini-graph-card-bundle.js` and `/local/plotly-graph-card.js` as Lovelace module resources.
+
+Manual install example:
+
+```bash
+mkdir -p /config/www
+wget -O /config/www/mini-graph-card-bundle.js \
+  https://github.com/kalkih/mini-graph-card/releases/download/v0.13.0/mini-graph-card-bundle.js
+wget -O /config/www/plotly-graph-card.js \
+  https://github.com/dbuezas/lovelace-plotly-graph-card/releases/download/v3.3.5/plotly-graph-card.js
+```
+
+Then register:
+
+```yaml
+lovelace:
+  resources:
+    - url: /local/mini-graph-card-bundle.js
+      type: module
+    - url: /local/plotly-graph-card.js
+      type: module
+```
+
 ## Registering A YAML Dashboard
 
 If you want a separate YAML dashboard, use the `lovelace_dashboards:` example from [`configuration.yaml`](../examples/home-assistant/configuration.yaml).

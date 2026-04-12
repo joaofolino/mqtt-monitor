@@ -36,6 +36,7 @@ Repo examples live under [`examples/home-assistant`](examples/home-assistant):
 
 At runtime, V2 can also generate a dashboard automatically at the configured `dashboard_output_path`.
 The generated dashboard uses `mini-graph-card` for live sparklines and `lovelace-plotly-graph-card` for longer trend views.
+Install those cards through HACS or copy the release bundles into `/config/www` and register them as `/local/mini-graph-card-bundle.js` and `/local/plotly-graph-card.js`.
 
 ## Development
 
