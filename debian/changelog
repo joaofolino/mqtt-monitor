@@ -1,3 +1,13 @@
+mqtt-monitor (1.0.1-1) unstable; urgency=medium
+
+  * Fix SMART capacity caching so the service no longer crashes on restart.
+  * Publish delta-based disk I/O metrics to avoid bogus startup spikes.
+  * Keep valid NVMe SMART data online even when smartctl sets warning bits.
+  * Publish retained MQTT discovery/state payloads for the current Home Assistant schema.
+  * Fix RAID failed-device parsing and add broader loop error handling.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 13:30:00 +0200
+
 mqtt-monitor (1.0.0-1) unstable; urgency=medium
 
   * Initial release of MQTT Monitor.

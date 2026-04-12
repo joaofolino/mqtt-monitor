@@ -25,7 +25,7 @@ jobs:
           cp src/merge_config.py mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/
           cp debian/mqtt-monitor.service mqtt-monitor_${{ env.VERSION }}/lib/systemd/system/
           cp debian/mqtt-monitor.logrotate mqtt-monitor_${{ env.VERSION }}/usr/share/mqtt-monitor/
-          sed "s/Version: 1.0-1/Version: ${{ env.VERSION }}/" debian/control > mqtt-monitor_${{ env.VERSION }}/DEBIAN/control
+          sed -E "s/^Version: .*/Version: ${{ env.VERSION }}/" debian/control > mqtt-monitor_${{ env.VERSION }}/DEBIAN/control
           cp debian/conffiles mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           cp debian/changelog mqtt-monitor_${{ env.VERSION }}/DEBIAN/
           cp debian/postinst mqtt-monitor_${{ env.VERSION }}/DEBIAN/
