@@ -202,10 +202,63 @@ def test_build_dashboard_yaml_includes_v2_sections(tmp_path):
     assert "name: SMART Health" in dashboard_yaml
     assert "name: Max Temp" in dashboard_yaml
     assert "name: I/O Busy" in dashboard_yaml
-    assert "name: I/O Read (KB/s)" in dashboard_yaml
+    assert "name: I/O Read" in dashboard_yaml
     assert "color: green" in dashboard_yaml
     assert "color: amber" in dashboard_yaml
-    assert "| Disk | Read KB/s | Write KB/s | Busy % |" in dashboard_yaml
+    assert "mdi:harddisk-check" in dashboard_yaml
+    assert "<th>Disk</th><th>Current I/O</th>" in dashboard_yaml
+    assert "<strong>Transfer</strong>" in dashboard_yaml
+    assert "<strong>Load</strong>" in dashboard_yaml
+    assert "Load is the share of the latest sample window" in dashboard_yaml
+    assert "serving I/O." in dashboard_yaml
+
+
+def test_build_dashboard_yaml_colors_degraded_raids_red(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=[],
+        raid_arrays=["md0"],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+    )
+    snapshot = MonitorSnapshot(
+        generated_at="2026-04-12T12:00:00Z",
+        host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+        filesystems=[FilesystemMetric(mount_point="/", usage_percentage=55, free_space="100G")],
+        disks=[],
+        raids=[RaidMetric(name="md0", status="degraded", raw="md0 degraded", failed_devices=["sdb"])],
+        containers=[],
+    )
+
+    dashboard_yaml = build_dashboard_yaml(config, snapshot)
+
+    assert "sensor.raid_md0_status" in dashboard_yaml
+    assert "mdi:harddisk-remove" in dashboard_yaml
+    assert "color: red" in dashboard_yaml
 
 
 def test_dashboard_entity_prefix_is_sanitized(tmp_path):

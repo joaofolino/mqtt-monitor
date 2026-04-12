@@ -1,3 +1,11 @@
+mqtt-monitor (1.1.0-0rc14) unstable; urgency=medium
+
+  * Color RAID cards by state so active arrays read green, rebuilding arrays read amber, and degraded arrays read red.
+  * Rework the Home Assistant disk I/O overview into a narrower table with contextual transfer/load labels and calmer rounding.
+  * Explain disk load as the share of the latest sample window spent busy serving I/O.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 20:00:00 +0200
+
 mqtt-monitor (1.1.0-0rc13) unstable; urgency=medium
 
   * Introduce the V2 runtime with inventory discovery for disks, RAID, mounts, and LXC.

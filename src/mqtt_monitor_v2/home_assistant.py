@@ -247,6 +247,53 @@ def container_tile_card(prefix: str, container) -> dict:
     }
 
 
+def raid_tile_card(raid) -> dict:
+    """Return a color-aware RAID status tile stack."""
+    status_entity = f"sensor.raid_{raid.slug}_status"
+    cards = [
+        conditional_card(
+            [{"entity": status_entity, "state": "active"}],
+            tile_card(
+                status_entity,
+                raid.name,
+                "mdi:harddisk-check",
+                color="green",
+                state_content="state",
+            ),
+        )
+    ]
+    for state in ("resyncing", "recovering", "checking", "repairing", "rebuilding", "reshape", "reshaping", "syncing"):
+        cards.append(
+            conditional_card(
+                [{"entity": status_entity, "state": state}],
+                tile_card(
+                    status_entity,
+                    raid.name,
+                    "mdi:harddisk-plus",
+                    color="amber",
+                    state_content="state",
+                ),
+            )
+        )
+    for state in ("degraded", "failed", "inactive", "unknown"):
+        cards.append(
+            conditional_card(
+                [{"entity": status_entity, "state": state}],
+                tile_card(
+                    status_entity,
+                    raid.name,
+                    "mdi:harddisk-remove",
+                    color="red",
+                    state_content="state",
+                ),
+            )
+        )
+    return {
+        "type": "vertical-stack",
+        "cards": cards,
+    }
+
+
 def disk_heat_card(disk) -> dict:
     """Return a disk temperature gauge with severity-aware thresholds."""
     return gauge_card(
@@ -265,33 +312,70 @@ def disk_activity_score(disk) -> float:
     return disk.read_kilobytes_per_second + disk.write_kilobytes_per_second
 
 
-def disk_io_card(disk) -> dict:
-    """Return a compact disk I/O summary card."""
-    return entities_card(
-        f"Disk {disk.name}",
+def formatted_sensor_template(entity: str, *, decimals: int = 1, integer_threshold: float | None = None) -> str:
+    """Return a Jinja template that formats a Home Assistant numeric state."""
+    state = f"(states('{entity}') | float(0))"
+    if decimals == 0:
+        return "{{ " + state + " | round(0) | int }}"
+    rounded_value = "(" + state + f" | round({decimals}))"
+    rounded = "{{ " + rounded_value + " }}"
+    if integer_threshold is None:
+        return rounded
+    return (
+        "{{ "
+        + "(("
+        + state
+        + f" | round(0) | int) if {state} >= {integer_threshold} else "
+        + rounded_value
+        + ") }}"
+    )
+
+
+def disk_load_label_template(entity: str) -> str:
+    """Return a Jinja template that adds qualitative context to disk busy percentage."""
+    return "\n".join(
         [
-            named_entity(f"sensor.disk_{disk.slug}_read_kilobytes_per_second", "I/O Read (KB/s)"),
-            named_entity(f"sensor.disk_{disk.slug}_write_kilobytes_per_second", "I/O Write (KB/s)"),
-            named_entity(f"sensor.disk_{disk.slug}_busy_time_percentage", "I/O Busy (%)"),
-        ],
+            "{% set busy = states('" + entity + "') | float(0) %}",
+            "{% if busy >= 80 %}Saturated",
+            "{% elif busy >= 50 %}High",
+            "{% elif busy >= 20 %}Moderate",
+            "{% else %}Low",
+            "{% endif %}",
+        ]
     )
 
 
 def disk_io_markdown_card(disks) -> dict:
-    """Return a dense markdown table for disk I/O overview."""
+    """Return a compact HTML table for disk I/O overview."""
     lines = [
-        "| Disk | Read KB/s | Write KB/s | Busy % |",
-        "| --- | ---: | ---: | ---: |",
+        "<table>",
+        "<thead><tr><th>Disk</th><th>Current I/O</th></tr></thead>",
+        "<tbody>",
     ]
     for disk in disks:
+        read_entity = f"sensor.disk_{disk.slug}_read_kilobytes_per_second"
+        write_entity = f"sensor.disk_{disk.slug}_write_kilobytes_per_second"
+        busy_entity = f"sensor.disk_{disk.slug}_busy_time_percentage"
         lines.append(
-            "| {name} | {{{{ states('sensor.disk_{slug}_read_kilobytes_per_second') }}}} | "
-            "{{{{ states('sensor.disk_{slug}_write_kilobytes_per_second') }}}} | "
-            "{{{{ states('sensor.disk_{slug}_busy_time_percentage') }}}} |".format(
-                name=disk.name,
-                slug=disk.slug,
+            (
+                "<tr>"
+                f"<td><strong>{disk.name}</strong></td>"
+                "<td>"
+                f"<strong>Transfer</strong> R <code>{formatted_sensor_template(read_entity, integer_threshold=100)}</code>"
+                f" / W <code>{formatted_sensor_template(write_entity, integer_threshold=100)}</code> KB/s<br>"
+                f"<strong>Load</strong> {disk_load_label_template(busy_entity)} "
+                f"(<code>{formatted_sensor_template(busy_entity, decimals=0)}</code>%)"
+                "</td>"
+                "</tr>"
             )
         )
+    lines.extend(
+        [
+            "</tbody>",
+            "</table>",
+            "<p><small>Load is the share of the latest sample window each disk spent busy serving I/O.</small></p>",
+        ]
+    )
     return {
         "type": "markdown",
         "content": "\n".join(lines),
@@ -490,14 +574,7 @@ def build_dashboard_view(config, snapshot) -> dict:
                 "type": "grid",
                 "columns": 2,
                 "square": False,
-                "cards": [
-                    tile_card(
-                        f"sensor.raid_{raid.slug}_status",
-                        raid.name,
-                        "mdi:harddisk-plus",
-                    )
-                    for raid in snapshot.raids
-                ],
+                "cards": [raid_tile_card(raid) for raid in snapshot.raids],
             }
         )
     if maintenance_filesystems:
@@ -560,7 +637,6 @@ def build_dashboard_view(config, snapshot) -> dict:
     disk_activity_cards = [{"type": "heading", "heading": "Disk I/O", "icon": "mdi:pulse"}]
     if activity_disks:
         disk_activity_cards.append(disk_io_markdown_card(activity_disks))
-        disk_activity_cards.extend([disk_io_card(disk) for disk in activity_disks[:3]])
 
     sections = [
         {"cards": overview_cards},
