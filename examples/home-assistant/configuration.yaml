@@ -14,7 +14,10 @@ lovelace_dashboards:
   mqtt-monitor:
     mode: yaml
     title: MQTT Monitor
-    icon: mdi:server-network
+    icon: mdi:server
     show_in_sidebar: true
     require_admin: false
     filename: dashboards/mqtt-monitor-dashboard.yaml
+
+# If you prefer the runtime-generated dashboard, point filename at the copied
+# output from dashboard_output_path instead.

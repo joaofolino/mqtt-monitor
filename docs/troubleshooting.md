@@ -3,51 +3,80 @@
 ## Service Not Starting
 
 Check status:
+
 ```bash
 sudo systemctl status mqtt-monitor.service
 ```
 
 View logs:
+
 ```bash
 tail -f /var/log/mqtt-monitor.log
 ```
 
 Common issues:
-- **Missing dependencies**: Ensure `smartmontools`, `python3-pip`, etc., are installed.
-- **Config errors**: Verify `/etc/mqtt-monitor/mqtt-monitor.conf` syntax.
-- **Device permissions**: Confirm the packaged service file is present and `systemd` reloaded it after upgrades.
+
+- config syntax problems in `/etc/mqtt-monitor/mqtt-monitor.conf`
+- missing runtime tools such as `smartctl`
+- device permission problems
+- an old service unit still loaded by `systemd`
 
 ## MQTT Not Publishing
 
-- Check broker connectivity:
-  ```bash
-  mosquitto_sub -h <broker> -u <user> -P <pass> -t 'test'
-  ```
-- Ensure `broker`, `port`, `mqtt_user`, `mqtt_pass` are correct.
+Check broker connectivity:
 
-## Alerts Not Sending
+```bash
+mosquitto_sub -h <broker> -u <user> -P <pass> -t 'test'
+```
 
-- Verify `enable_email = true` and `smtp_*` settings.
-- Test SMTP:
-  ```bash
-  python3 -c "import smtplib; smtplib.SMTP('smtp.gmail.com', 587).starttls()"
-  ```
+Then verify:
+
+- `broker`, `port`, `mqtt_user`, and `mqtt_pass`
+- `topic_prefix`
+- Home Assistant is pointed at the same broker
+
+## Home Assistant Notifications Not Working
+
+Verify:
+
+- `url` points to the correct Home Assistant base URL
+- `token` is a valid long-lived access token
+- `notify_service` is a real `notify.*` service if you configured one
+- `notification_minimum_severity` is not filtering out the issue you expect to see
+
+Persistent notifications can still work even when `notify_service` is blank.
 
 ## Config Not Updating
 
-- Check `/etc/mqtt-monitor/mqtt-monitor.conf_old` for backups.
-- Compare with `/etc/mqtt-monitor/mqtt-monitor.conf_new` for new options.
+Compare:
 
-## Home Assistant Entities Have `_2` Suffixes
+- `/etc/mqtt-monitor/mqtt-monitor.conf`
+- `/etc/mqtt-monitor/mqtt-monitor.conf_old`
+- `/etc/mqtt-monitor/mqtt-monitor.conf_new`
 
-That usually means Home Assistant already had stale entities occupying the original entity IDs.
+Package upgrades preserve the current config and merge in missing packaged options.
+
+## Dashboard Looks Empty
+
+Usually one of these is true:
+
+- the MQTT integration is not configured in Home Assistant
+- the monitor is publishing to a different broker or topic prefix than expected
+- the dashboard YAML references entity IDs that do not match your instance
+
+Check Home Assistant Developer Tools first, then compare against:
+
+- the generated dashboard file from `dashboard_output_path`
+- or the example files under `examples/home-assistant/`
+
+## Entities Have `_2` Suffixes
+
+That usually means Home Assistant already had stale MQTT entities occupying the original IDs.
 
 Options:
 
-- remove the stale MQTT discovery entities from Home Assistant and let discovery recreate them cleanly
-- or keep them and update your dashboard YAML to the entity IDs Home Assistant actually created
-
-The example dashboard in this repo assumes a clean install with unsuffixed entity IDs.
+- remove the stale entities and let discovery recreate them cleanly
+- or keep them and update the dashboard YAML to the entity IDs Home Assistant actually created
 
 ## NVMe SMART Shows As Unavailable
 
@@ -69,14 +98,31 @@ Check what the host sees in `/proc/mdstat`:
 cat /proc/mdstat
 ```
 
-Then confirm the arrays listed in `raid_arrays` match the real array names on the host.
+Then confirm:
 
-## Dashboard Looks Empty
+- the array names are correct
+- discovery is enabled if you expect auto-detection
+- the array is not being filtered out by old static config assumptions
 
-Usually one of these is true:
+## Containers Are Missing
 
-- the MQTT integration is not configured in Home Assistant
-- the monitor is publishing to a different broker or topic prefix than expected
-- the dashboard example uses different entity IDs than your instance created
+Verify that `lxc-ls` works on the monitored host and that:
 
-Check Home Assistant Developer Tools first, then compare with the example files under `examples/home-assistant/`.
+- `auto_discover_lxc = true`
+- or `expected_lxc_containers` includes the containers you care about
+
+Autostarted containers are also treated as expected-running resources by V2.
+
+## State Or Dashboard Files Are Missing
+
+By default V2 writes runtime artifacts under:
+
+- `/var/lib/mqtt-monitor`
+
+Check:
+
+```bash
+ls -la /var/lib/mqtt-monitor
+```
+
+That directory is created by the package post-install step. If you changed `state_dir` or `dashboard_output_path`, verify permissions there too.

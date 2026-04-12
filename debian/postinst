@@ -46,6 +46,11 @@ if [ ! -f /etc/logrotate.d/mqtt-monitor ]; then
     chmod 644 /etc/logrotate.d/mqtt-monitor
 fi
 
+# Create runtime state directory used for issue persistence and generated dashboards
+mkdir -p /var/lib/mqtt-monitor
+chown mqtt-monitor:disk /var/lib/mqtt-monitor
+chmod 770 /var/lib/mqtt-monitor
+
 # Enable and start service
 systemctl enable mqtt-monitor.service
 systemctl start mqtt-monitor.service

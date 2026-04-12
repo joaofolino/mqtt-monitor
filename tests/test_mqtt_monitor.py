@@ -8,8 +8,9 @@ import pytest
 sys.path.insert(0, "/app/src")
 sys.path.insert(0, "./src")
 
-from mqtt_monitor import (  # pylint: disable=wrong-import-position
-    Config,
+from mqtt_monitor import Config  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.home_assistant import setup_sensors  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.system import (  # pylint: disable=wrong-import-position
     check_package_version,
     disk_cache,
     get_capacity_gib,
@@ -20,7 +21,6 @@ from mqtt_monitor import (  # pylint: disable=wrong-import-position
     log,
     parse_smartctl_exit_code,
     setup_logging,
-    setup_sensors,
 )
 
 
@@ -102,7 +102,7 @@ class TestMqttMonitor:
     def test_get_disk_info_handles_cached_integer_capacity(self, setup_monitor):
         config, logger = setup_monitor
         disk_cache["/dev/sda"] = {"capacity": 4}
-        with patch("mqtt_monitor.os.path.exists", return_value=True):
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True):
             result = get_disk_info(config, logger, "/dev/sda", full=False)
         assert result["capacity"] == 4
 
@@ -115,7 +115,7 @@ class TestMqttMonitor:
                 "Power On Hours: 200",
             ]
         )
-        with patch("mqtt_monitor.os.path.exists", return_value=True), patch("mqtt_monitor.run_cmd") as mock_run_cmd:
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
             mock_run_cmd.side_effect = [
                 ("1099511627776", 0),
                 (smart_output, 1 << 2),
@@ -138,14 +138,14 @@ class TestMqttMonitor:
             read_merged_count=1,
             write_merged_count=2,
         )
-        with patch("mqtt_monitor.psutil.disk_io_counters", return_value={"sda": io_stats}):
+        with patch("mqtt_monitor_v2.system.psutil.disk_io_counters", return_value={"sda": io_stats}):
             result = get_disk_io(config, logger, "sda")
         assert result["read_bytes"] == 1000
         assert result["busy_time"] == 50
 
     def test_get_usage_falls_back_to_psutil(self, setup_monitor):
         config, logger = setup_monitor
-        with patch("mqtt_monitor.run_cmd", return_value=("", 0)), patch("mqtt_monitor.psutil.disk_usage") as mock_disk_usage:
+        with patch("mqtt_monitor_v2.system.run_cmd", return_value=("", 0)), patch("mqtt_monitor_v2.system.psutil.disk_usage") as mock_disk_usage:
             mock_disk_usage.return_value = MagicMock(percent=75, free=1073741824)
             result = get_usage(config, logger, "/")
         assert result == (75, "1G")
@@ -162,7 +162,7 @@ class TestMqttMonitor:
 
     def test_check_package_version_reads_current_version_from_tuple(self, setup_monitor):
         config, logger = setup_monitor
-        with patch("mqtt_monitor.requests.get") as mock_requests, patch("mqtt_monitor.run_cmd") as mock_run_cmd, patch("subprocess.run") as mock_subprocess_run:
+        with patch("mqtt_monitor_v2.system.requests.get") as mock_requests, patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd, patch("mqtt_monitor_v2.system.subprocess.run") as mock_subprocess_run:
             mock_requests.return_value.json.return_value = {"tag_name": "v1.0.1-2"}
             mock_run_cmd.return_value = ("1.0.1-1", 0)
             updated = check_package_version(config, logger)

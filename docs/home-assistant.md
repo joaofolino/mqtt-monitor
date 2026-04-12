@@ -1,172 +1,122 @@
 # Home Assistant Integration
 
-`mqtt-monitor` integrates with Home Assistant through MQTT discovery.
+`mqtt-monitor` integrates with Home Assistant in two ways:
 
-That means the monitor publishes discovery payloads automatically and Home Assistant creates entities from them without manual sensor YAML.
+- MQTT discovery for entities
+- optional Home Assistant service calls for notifications
 
-This guide covers:
+## What V2 Adds
 
-- the minimum Home Assistant setup required
-- how to use the example YAML files in this repo
-- how to adapt the dashboard example for your own disks and RAID arrays
+Compared with the original prototype-oriented setup, V2 now gives Home Assistant:
 
-## What Home Assistant Needs
+- host, disk, RAID, filesystem, and LXC container entities
+- an active-issue count sensor
+- a highest-issue-severity sensor
+- per-issue binary sensors
+- a generated dashboard YAML file
+
+## Minimum Requirements
 
 At minimum, Home Assistant needs:
 
 1. a working MQTT integration connected to the same broker as `mqtt-monitor`
-2. the monitored host publishing discovery and state topics
+2. the monitor publishing discovery and state topics
 
-On a clean setup, once the monitor starts, Home Assistant should create entities like:
+For notifications, it also needs:
 
-- `sensor.server_monitor_server_cpu_load_percentage`
-- `sensor.server_monitor_server_root_disk_usage_percentage`
-- `sensor.server_monitor_disk_sda_max_temperature`
-- `binary_sensor.server_monitor_disk_sda_disk_failing`
-- `sensor.server_monitor_raid_md0_status`
+3. a valid Home Assistant base URL and long-lived access token in `mqtt-monitor.conf`
 
-## Repo Examples
+## Common Entity IDs
 
-This repo includes Home Assistant examples under [`examples/home-assistant`](../examples/home-assistant):
+On a clean setup, V2 should create stable entity IDs such as:
+
+- `sensor.server_cpu_load_percentage`
+- `sensor.server_root_disk_usage_percentage`
+- `sensor.server_active_issue_count`
+- `sensor.server_highest_issue_severity`
+- `sensor.raid_md0_status`
+- `binary_sensor.server_container_web_running`
+- `sensor.disk_sda_smart_health_status`
+
+If your Home Assistant instance already has stale entities occupying those names, Home Assistant may suffix them with `_2`.
+
+## Dashboard Options
+
+### Option 1: Use the generated dashboard
+
+V2 can write a dashboard YAML file automatically to the configured `dashboard_output_path`.
+
+Default:
+
+- `/var/lib/mqtt-monitor/home-assistant-dashboard.yaml`
+
+This is the easiest path if you want the monitor to own the dashboard shape.
+
+### Option 2: Use the repo example
+
+Example files live under [`examples/home-assistant`](../examples/home-assistant):
 
 - [`configuration.yaml`](../examples/home-assistant/configuration.yaml)
 - [`dashboard/mqtt-monitor-dashboard.yaml`](../examples/home-assistant/dashboard/mqtt-monitor-dashboard.yaml)
 
-The examples are intentionally conservative:
+This is useful if you want a starting point you can copy into your Home Assistant config and then customize manually.
 
-- built with standard Lovelace cards
-- no custom cards required
-- assume a clean Home Assistant install with unsuffixed entity IDs
+## Registering A YAML Dashboard
 
-## Clean Install Vs Existing Home Assistant
+If you want a separate YAML dashboard, use the `lovelace_dashboards:` example from [`configuration.yaml`](../examples/home-assistant/configuration.yaml).
 
-On a clean Home Assistant instance, example entity IDs should match exactly.
+Then point `filename` at either:
 
-On an existing Home Assistant instance, stale entities may already occupy the base names. In that case, Home Assistant may create suffixed entity IDs such as:
+- the generated dashboard file you copy into Home Assistant
+- or the example dashboard checked into this repo
 
-- `sensor.server_monitor_disk_sda_max_temperature_2`
-- `sensor.server_monitor_server_cpu_load_percentage_2`
+## Notifications
 
-If that happens, either:
+V2 can notify Home Assistant when issues start and resolve.
 
-- clean up the old MQTT discovery entities and reuse the unsuffixed names
-- or adjust the example dashboard YAML to the entity IDs that Home Assistant actually created
+Relevant config options:
+
+- `url`
+- `token`
+- `notify_service`
+- `persistent_notifications`
+- `notify_on_new_issue`
+- `notify_on_resolve`
+- `notification_minimum_severity`
+
+Two supported patterns are:
+
+- persistent notifications only
+- persistent notifications plus a `notify.*` service such as a mobile app
 
 ## Recommended Setup Flow
 
-### 1. Configure MQTT in Home Assistant
+1. Configure Home Assistant MQTT against the same broker as `mqtt-monitor`.
+2. Start or restart `mqtt-monitor`.
+3. Confirm the discovered entities appear in Home Assistant.
+4. Decide whether you want the generated dashboard or the repo example.
+5. If using notifications, add `url` and `token` and restart the service.
 
-If you already configured MQTT through the Home Assistant UI, keep using that.
+## Dashboard Shape
 
-If you prefer YAML-managed MQTT, use the commented example in [`configuration.yaml`](../examples/home-assistant/configuration.yaml) as a starting point.
+The generated dashboard focuses on:
 
-### 2. Install and configure `mqtt-monitor`
+- host overview
+- active issues
+- filesystems
+- RAID arrays
+- LXC containers
+- one card per discovered disk
 
-On the monitored host:
-
-1. install the Debian package
-2. edit `/etc/mqtt-monitor/mqtt-monitor.conf`
-3. point it at the same MQTT broker used by Home Assistant
-4. restart the service
-
-Verify MQTT activity before touching dashboards:
-
-```bash
-mosquitto_sub -h <broker> -u <user> -P <password> -t 'home/server/mqtt-monitor/#'
-```
-
-### 3. Register the YAML dashboard
-
-If you want a separate YAML dashboard, add the `lovelace_dashboards:` block from [`configuration.yaml`](../examples/home-assistant/configuration.yaml) to your Home Assistant configuration.
-
-That example registers a dashboard file at:
-
-- `dashboards/mqtt-monitor-dashboard.yaml`
-
-### 4. Copy the dashboard example
-
-Copy [`dashboard/mqtt-monitor-dashboard.yaml`](../examples/home-assistant/dashboard/mqtt-monitor-dashboard.yaml) into your Home Assistant config directory under `dashboards/`.
-
-### 5. Reload Home Assistant
-
-Reload Lovelace, or restart Home Assistant if needed.
-
-## What The Example Dashboard Assumes
-
-The example dashboard assumes:
-
-- host metrics are enabled
-- mount usage is tracked for `/` and `/var/log`
-- disks `sda` and `sdb` exist
-- arrays `md0` and `md1` exist
-
-That matches the packaged sample config better than a more complex real-world setup.
-
-If your system has more devices, duplicate the disk cards and replace the device names.
-
-Examples:
-
-- change `sda` to `nvme0n1`
-- change `md0` to `md2`
-- add another entities card for `sdc`
-
-## How To Extend The Dashboard
-
-Good next steps for a custom dashboard are:
-
-- add cards for every disk listed in `devices`
-- add more RAID cards for every array in `raid_arrays`
-- add history graphs for write spikes and busy time
-- add conditional or filtered cards for only active issues
-- add Home Assistant automations based on the discovered entities
-
-## Entity Families Created By Discovery
-
-### Host sensors
-
-- CPU load percentage
-- memory used megabytes
-- CPU temperature celsius
-- per-mount disk usage percentages
-
-### Disk sensors
-
-- SMART health status
-- max temperature
-- reallocated sectors
-- spin up count
-- read and write throughput
-- read and write operation rates
-- busy time percentage
-
-### Disk binary sensors
-
-- disk failing
-- SMART command failed
-- device open failed
-- command line parse error
-- prefail threshold passed
-- past threshold passed
-- error log flags
-- self-test log flags
-
-### RAID sensors
-
-- one status sensor per array
-
-## Notes About Availability
-
-Disk entities are wired to MQTT availability topics.
-
-That means Home Assistant will mark them unavailable when the monitor reports a disk as offline. This is expected and makes dashboards much easier to reason about than publishing placeholder strings for a dead device.
+That keeps the default experience useful without requiring custom cards.
 
 ## Troubleshooting
 
-If discovery or the dashboard does not look right:
+If discovery or notifications do not look right:
 
-- verify MQTT discovery topics are present under `homeassistant/...`
-- verify state topics are present under your `topic_prefix`
-- confirm entity names in Developer Tools before trusting the example YAML
-- check for stale suffixed entities from earlier experiments
+- verify MQTT discovery topics under `homeassistant/...`
+- verify state topics under your configured `topic_prefix`
+- verify the HA token works against `/api/`
+- confirm the actual entity IDs in Developer Tools before editing dashboard YAML
 
 See also [troubleshooting.md](troubleshooting.md).

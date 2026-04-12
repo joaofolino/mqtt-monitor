@@ -1,280 +1,252 @@
-# MQTT Monitor v1 Architecture
+# MQTT Monitor v2 Architecture
 
 ## Purpose
 
-`mqtt-monitor` is a single-host monitoring agent for Linux servers that:
+Version 2 keeps the single-host focus of `mqtt-monitor`, but changes the internal shape of the system so the output is more useful in Home Assistant.
 
-- collects host, disk, and RAID health data locally
-- publishes metrics to MQTT
-- registers Home Assistant entities through MQTT discovery
-- optionally sends email alerts for severe conditions
+The key shift is:
 
-Version 1 is intentionally simple. It is a Python script packaged as a Debian package and run by `systemd` on the monitored host.
+- V1 mostly published raw metrics and flags
+- V2 models the machine as resources plus issues
+
+That lets one runtime feed:
+
+- MQTT discovery
+- retained state topics
+- Home Assistant notifications
+- a generated dashboard file
 
 ## High-Level Flow
 
 ```mermaid
 flowchart LR
-    Host["Monitored Linux Host"] --> Probe["mqtt_monitor.py"]
-    Probe -->|MQTT discovery topics| Broker["MQTT Broker"]
-    Probe -->|MQTT state topics| Broker
-    Broker --> HA["Home Assistant MQTT Integration"]
-    HA --> Dash["Lovelace Dashboards"]
-    Probe -->|SMTP alerts| Mail["SMTP Server"]
+    Host["Monitored Linux Host"] --> Collector["Collector (system.py)"]
+    Collector --> Issues["Issue Engine (issues.py)"]
+    Collector --> HA["HA Output Layer (home_assistant.py)"]
+    Issues --> HA
+    HA -->|MQTT discovery + state| Broker["MQTT Broker"]
+    Broker --> HomeAssistant["Home Assistant MQTT Integration"]
+    HA -->|REST service calls| HomeAssistant
+    HA -->|Generated YAML| Dashboard["Lovelace Dashboard File"]
 ```
 
-## Main Components
+## Runtime Modules
 
-### Monitored host
+### Entry point
 
-The monitored host is the machine where the Debian package is installed.
+The packaged executable remains [`src/mqtt_monitor.py`](../src/mqtt_monitor.py).
 
-It provides the raw data sources:
+It is now a compatibility shim that:
 
-- `smartctl` for SMART and NVMe health data
-- `/proc/mdstat` for Linux software RAID state
-- `psutil` for CPU, memory, disk usage, and disk I/O counters
-- `blockdev --getsize64` for disk capacity
-- `/sys/class/thermal/...` for CPU temperature
+- preserves the historical executable path
+- exposes the legacy helper names used by tests
+- imports the real runtime from `mqtt_monitor_v2`
 
-### Collector process
+### Config loader
 
-The runtime entry point is [`src/mqtt_monitor.py`](../src/mqtt_monitor.py).
+[`src/mqtt_monitor_v2/config.py`](../src/mqtt_monitor_v2/config.py) loads `/etc/mqtt-monitor/mqtt-monitor.conf`.
 
-Responsibilities:
+It supports both the older V1 options and the newer V2 options for:
 
-- load configuration from `/etc/mqtt-monitor/mqtt-monitor.conf`
-- connect to MQTT
-- publish MQTT discovery payloads for Home Assistant
-- poll system state on a loop
-- compute delta-based I/O metrics
-- publish retained MQTT state payloads
-- send email alerts for configured severe conditions
+- discovery
+- Home Assistant notifications
+- generated dashboard output
+- persisted runtime state
 
-### Systemd service
+### Data model
 
-The packaged service definition lives at [`debian/mqtt-monitor.service`](../debian/mqtt-monitor.service).
+[`src/mqtt_monitor_v2/models.py`](../src/mqtt_monitor_v2/models.py) defines the internal resource model:
 
-Important runtime properties:
+- `HostMetrics`
+- `FilesystemMetric`
+- `DiskMetric`
+- `RaidMetric`
+- `ContainerMetric`
+- `Issue`
+- `MonitorSnapshot`
+- `MonitorState`
 
-- runs as `User=mqtt-monitor`
-- runs with `Group=disk`
-- keeps `CAP_SYS_ADMIN` and `CAP_SYS_RAWIO`
+This is the main architectural upgrade. The rest of the code works on typed snapshots and issues rather than directly mixing MQTT topics with collection logic.
 
-Those capabilities are needed so the dedicated service user can read NVMe SMART data without running the whole service as `root`.
+### Collector
 
-### MQTT broker
+[`src/mqtt_monitor_v2/system.py`](../src/mqtt_monitor_v2/system.py) is responsible for local system access.
 
-The broker is not bundled with this project. `mqtt-monitor` assumes a reachable broker and publishes:
+It:
 
-- Home Assistant discovery payloads under `homeassistant/...`
-- state payloads under the configured `topic_prefix`
+- reads RAID state from `/proc/mdstat`
+- reads SMART and NVMe data through `smartctl`
+- reads disk capacity through `blockdev`
+- reads host metrics through `psutil`
+- computes delta-based disk I/O rates
+- discovers disks from `/sys/block`
+- discovers mount points from `psutil.disk_partitions`
+- discovers LXC containers through `lxc-ls`
 
-### Home Assistant
+It returns a `MonitorSnapshot` for each loop.
 
-Home Assistant consumes the discovery payloads and creates entities automatically through its MQTT integration.
+### Issue engine
 
-This means:
+[`src/mqtt_monitor_v2/issues.py`](../src/mqtt_monitor_v2/issues.py) evaluates the snapshot into first-class issues.
 
-- manual YAML sensor definitions are not required for the core entities
-- dashboards can be built directly from discovered entities
-- entity naming is stable on a clean install because `unique_id` values are stable
+Current issue families:
 
-## Runtime Loop
+- filesystem high and critical usage
+- RAID degraded
+- disk unavailable
+- SMART failure and SMART warning flags
+- disk temperature warning and critical
+- `md1` write spikes
+- CPU temperature warning and critical
+- expected or autostart LXC container stopped
 
-At startup:
+It also persists issue state under `state_dir` so the runtime can detect:
 
-1. Load config.
-2. Set up logging.
-3. Connect to MQTT.
-4. Optionally self-update if `package_version = latest` and a newer GitHub release exists.
-5. Publish Home Assistant MQTT discovery payloads.
+- newly active issues
+- newly resolved issues
 
-Each monitoring loop then:
+That prevents “every loop is a new alert” behavior after restarts.
 
-1. Publishes host CPU, memory, and temperature metrics.
-2. Reads per-disk I/O counters from `psutil`.
-3. Computes delta-based rates from the previous sample.
-4. Reads RAID state from `/proc/mdstat`.
-5. Reads filesystem usage for configured mount points.
-6. Refreshes SMART data on `smart_interval`.
-7. Publishes all state back to MQTT.
-8. Sends alerts when configured thresholds are crossed.
+### Home Assistant output layer
 
-## Data Model
+[`src/mqtt_monitor_v2/home_assistant.py`](../src/mqtt_monitor_v2/home_assistant.py) turns snapshots and issues into user-facing outputs.
 
-### Host metrics
+It handles:
 
-These are always published once per loop:
+- MQTT discovery payloads
+- retained state topics
+- issue summary entities
+- per-issue binary sensors
+- per-container entities
+- dashboard YAML generation
+- optional REST service calls to Home Assistant for notifications
 
-| Metric | State topic suffix | HA entity example |
-| --- | --- | --- |
-| CPU load percentage | `host/cpu_load_percentage` | `sensor.server_monitor_server_cpu_load_percentage` |
-| Memory used MB | `host/memory_used_megabytes` | `sensor.server_monitor_server_memory_used_megabytes` |
-| CPU temperature C | `host/cpu_temperature_celsius` | `sensor.server_monitor_server_cpu_temperature_celsius` |
-| Mount usage percentage | `host/<mount>_disk_usage_percentage` | `sensor.server_monitor_server_root_disk_usage_percentage` |
+### Runtime loop
 
-Mount names are normalized by:
+[`src/mqtt_monitor_v2/engine.py`](../src/mqtt_monitor_v2/engine.py) coordinates the loop:
 
-- stripping the leading slash
-- replacing `/` with `_`
-- using `root` for `/`
+1. load config
+2. load persisted issue state
+3. connect to MQTT
+4. collect a snapshot
+5. learn expected containers from autostart or previously running LXC containers
+6. evaluate issues
+7. apply issue transitions
+8. publish discovery and state
+9. write the dashboard YAML file
+10. send Home Assistant notifications if configured
 
-### Disk metrics
+## Resource Model
 
-For each configured device in `devices`, the collector publishes:
+### Host
 
-| Category | Topics |
-| --- | --- |
-| Availability | `disk/<device>/availability` |
-| SMART state | `disk/<device>/smart_health_status`, `max_temperature`, `reallocated_sectors`, `spin_up_count` |
-| SMART flags | `disk/<device>/command_line_parse_error`, `device_open_failed`, `smart_command_failed`, `disk_failing`, `prefail_attributes_threshold`, `past_attributes_threshold`, `device_error_log_errors`, `self_test_log_errors` |
-| I/O rates | `disk/<device>/read_kilobytes_per_second`, `write_kilobytes_per_second`, `read_count_per_second`, `write_count_per_second`, `busy_time_percentage` |
+Published metrics:
 
-Notes:
+- CPU load percentage
+- memory used megabytes
+- CPU temperature celsius
 
-- disk I/O is delta-based, not cumulative
-- the first loop after start primes counters instead of publishing bogus spikes
-- `busy_time_percentage` is also delta-based and clamped to `100`
-- `/dev/md1` is treated as a special logical device with usage and I/O, but not real SMART data
+### Filesystem
 
-### RAID metrics
+Each filesystem resource includes:
 
-For each configured or discovered RAID array:
+- mount point
+- usage percentage
+- free space string
 
-| Metric | State topic suffix | Attributes |
-| --- | --- | --- |
-| RAID status | `raid/<array>/status` | `failed_devices` list on `raid/<array>/attributes` |
+The mount point is normalized into a stable slug such as:
 
-Current status values:
+- `/` -> `root`
+- `/var/log` -> `var_log`
 
-- `active`
-- `degraded`
-- `unknown`
+### Disk
 
-## MQTT Discovery Model
+Each disk resource includes:
 
-Discovery is published under `homeassistant/...` with retained payloads.
+- identity and capacity
+- SMART health values
+- SMART exit-code flags
+- calculated I/O rates
+- busy time percentage
 
-Entity families:
+Logical `/dev/md*` devices are allowed for capacity and I/O visibility, even though they do not expose regular SMART attributes.
 
-- host sensors
-- mount usage sensors
-- disk sensors
-- disk binary sensors
-- RAID sensors
+### RAID array
 
-Stable `unique_id` patterns:
+Each RAID resource includes:
 
-- `server_monitor_server_<metric>`
-- `server_monitor_disk_<device>_<metric>`
-- `server_monitor_raid_<array>_status`
+- array name
+- status
+- failed devices list
+- raw mdstat summary
 
-Example:
+### Container
 
-- discovery topic: `homeassistant/sensor/disk_sda_max_temperature/config`
-- state topic: `<topic_prefix>/disk/sda/max_temperature`
-- resulting Home Assistant entity on a clean install: `sensor.server_monitor_disk_sda_max_temperature`
+Each container resource includes:
 
-If Home Assistant already has stale entities occupying those names, Home Assistant may create suffixed entity IDs such as `_2`. That is a Home Assistant registry behavior, not a different discovery schema.
+- name
+- status
+- autostart flag
 
-## Configuration Surface
+That lets V2 expose container state in HA and raise issues when containers expected to be up are stopped.
 
-The packaged config template lives at [`src/mqtt-monitor.conf`](../src/mqtt-monitor.conf).
+## Issue Model
 
-The main sections are:
+Every issue has:
 
-### `[monitor]`
+- a stable key
+- title and description
+- severity
+- resource type and resource name
+- active state
+- started timestamp
+- resolved timestamp
 
-- alerting behavior
-- log level
-- whether disk I/O metrics are published
-- desired package version
+That model is what makes notifications, dashboard summaries, and future suppression or deduping features possible.
 
-### `[mqtt]`
+## MQTT And Home Assistant Model
 
-- broker host and port
-- MQTT credentials
-- `self_name` identifier
+V2 still uses MQTT discovery under `homeassistant/...`, but now publishes additional families beyond V1:
 
-### `[internals]`
+- issue summary sensors
+- per-issue binary sensors
+- container sensors
+- richer disk attributes
 
-- `topic_prefix`
-- monitored device list
-- monitored RAID arrays
-- SMART interval
-- loop timing
-- thresholds for alerts
+The dashboard generator intentionally uses predictable entity IDs based on `object_id`, for example:
 
-## Packaging And Release Model
+- `sensor.server_cpu_load_percentage`
+- `sensor.server_active_issue_count`
+- `binary_sensor.server_container_web_running`
+- `sensor.disk_sda_capacity_gib`
+- `sensor.raid_md0_status`
 
-The project is released as a Debian package.
+## Persistence
 
-Important files:
+V2 writes state under `state_dir`, which defaults to `/var/lib/mqtt-monitor`.
 
-- package metadata: [`debian/control`](../debian/control)
-- package changelog: [`debian/changelog`](../debian/changelog)
-- release workflow: [release.yml](../.github/workflows/release.yml)
+Persisted data currently includes:
 
-Release process:
+- issue transition state
 
-1. merge code to `master`
-2. create a Git tag like `v1.0.1-2`
-3. GitHub Actions builds `mqtt-monitor_<version>.deb`
-4. the workflow creates a GitHub release and uploads the `.deb`
+The same directory is also the default destination for the generated dashboard file.
 
-When `package_version = latest`, the agent checks GitHub Releases and can self-install the latest published package.
+## Packaging
 
-## Security Model
+The Debian package now installs:
 
-Version 1 intentionally avoids running the service as full root during normal operation.
+- the compatibility entrypoint in `/usr/bin/mqtt_monitor.py`
+- the V2 package directory in `/usr/share/mqtt-monitor/mqtt_monitor_v2`
+- the config template in `/usr/share/mqtt-monitor/mqtt-monitor.conf`
 
-Current model:
+The post-install step also creates `/var/lib/mqtt-monitor` with ownership for the `mqtt-monitor` service user.
 
-- service user: `mqtt-monitor`
-- primary device access: `disk` group
-- extra capabilities: `CAP_SYS_ADMIN`, `CAP_SYS_RAWIO`
+## Why This Architecture Matters
 
-This is a compromise:
+The point of V2 is not just cleaner code. The user-visible wins are:
 
-- safer than running the full service as `root`
-- still privileged enough to access NVMe SMART admin commands
-
-Credentials stored locally:
-
-- MQTT username/password
-- SMTP username/password
-
-Those credentials live in `/etc/mqtt-monitor/mqtt-monitor.conf`, so host file permissions matter.
-
-## Alerting Model
-
-Version 1 alerting is email-only.
-
-Alerts are sent for:
-
-- disk SMART failure
-- RAID degradation
-- mount usage above threshold
-- configured write spikes on `md1`
-- log directory exhaustion
-
-Home Assistant notifications are not part of v1 itself; Home Assistant can consume the MQTT entities and build automations on top.
-
-## Known Limits Of V1
-
-These limits are intentional context for V2 planning:
-
-- static device and mount lists configured by hand
-- one monitored host per service instance and topic prefix
-- no first-class multi-host inventory model
-- no native Home Assistant dashboard generation
-- no native Home Assistant notification integration
-- no automatic cleanup of stale MQTT discovery entities after schema changes
-- alert policy is simple and mostly threshold-based
-
-## Related Docs
-
-- setup: [setup.md](setup.md)
-- Home Assistant integration: [home-assistant.md](home-assistant.md)
-- troubleshooting: [troubleshooting.md](troubleshooting.md)
+- less manual setup through discovery
+- one dashboard file instead of hand-built views
+- actionable issue state instead of raw sensor hunting
+- notification hooks for new and resolved problems
+- container awareness in addition to storage and host health

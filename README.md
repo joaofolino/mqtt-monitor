@@ -1,15 +1,23 @@
 # MQTT Monitor
 
-A Python service for Linux hosts that monitors:
+`mqtt-monitor` is a Debian-packaged monitoring agent for Linux hosts and Home Assistant.
+
+It now ships with a V2 runtime that focuses on user-visible outcomes instead of raw metrics alone:
+
+- automatic discovery of disks, RAID arrays, mount points, and LXC containers
+- first-class issues with start and resolve tracking
+- Home Assistant MQTT discovery for metrics, containers, and issue state
+- optional Home Assistant notifications for new and resolved issues
+- automatic generation of a Lovelace dashboard YAML file
+
+## What It Monitors
 
 - disk SMART and NVMe health
 - Linux software RAID state
 - host CPU, memory, and temperature
 - filesystem usage
 - per-disk I/O rates
-
-It publishes the results to MQTT, registers Home Assistant entities through MQTT
-discovery, and can optionally send email alerts for severe conditions.
+- LXC container state
 
 ## Docs
 
@@ -18,27 +26,17 @@ discovery, and can optionally send email alerts for severe conditions.
 - [Home Assistant Integration](docs/home-assistant.md)
 - [Troubleshooting Guide](docs/troubleshooting.md)
 
-## Installation
+## Home Assistant Examples
 
-See [Setup Guide](docs/setup.md).
+Repo examples live under [`examples/home-assistant`](examples/home-assistant):
 
-## Configuration
+- `configuration.yaml` for dashboard registration
+- `dashboard/mqtt-monitor-dashboard.yaml` for a starter Lovelace view
 
-Edit `/etc/mqtt-monitor/mqtt-monitor.conf`. See [Setup Guide](docs/setup.md) for details.
-
-## Troubleshooting
-
-See [Troubleshooting Guide](docs/troubleshooting.md).
+At runtime, V2 can also generate a dashboard automatically at the configured `dashboard_output_path`.
 
 ## Development
 
 - Branch: `master`
-- PRs: Validated with linting and tests
-- Releases: Tagged with `vX.Y.Z-N` (e.g., `v1.0.1-2`)
-
-## Home Assistant Examples
-
-Example Home Assistant files live under [`examples/home-assistant`](examples/home-assistant):
-
-- `configuration.yaml` for dashboard registration
-- `dashboard/mqtt-monitor-dashboard.yaml` for a starting Lovelace dashboard
+- PRs: validated with linting and tests
+- Releases: tagged with `vX.Y.Z-N` (for example `v1.0.1-2`)
