@@ -1,0 +1,169 @@
+title: MQTT Monitor
+views:
+  - title: Server Monitor
+    path: server-monitor
+    icon: mdi:server-network
+    cards:
+      - type: markdown
+        content: |
+          ## Host Overview
+          This example uses built-in Lovelace cards only. Adjust entity IDs if your
+          Home Assistant instance created suffixed IDs such as `_2`.
+
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - type: gauge
+            entity: sensor.server_monitor_server_cpu_load_percentage
+            name: CPU Load
+            unit: "%"
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 50
+              red: 80
+          - type: gauge
+            entity: sensor.server_monitor_server_cpu_temperature_celsius
+            name: CPU Temp
+            unit: C
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 60
+              red: 80
+          - type: gauge
+            entity: sensor.server_monitor_server_root_disk_usage_percentage
+            name: Root Usage
+            unit: "%"
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 95
+          - type: gauge
+            entity: sensor.server_monitor_server_var_log_disk_usage_percentage
+            name: /var/log Usage
+            unit: "%"
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 70
+              red: 95
+          - type: gauge
+            entity: sensor.server_monitor_server_memory_used_megabytes
+            name: Memory Used
+            unit: MB
+            min: 0
+            max: 32768
+            severity:
+              green: 0
+              yellow: 16384
+              red: 28672
+
+      - type: entity-filter
+        title: Active Issues
+        show_empty: false
+        entities:
+          - entity: sensor.server_monitor_raid_md0_status
+            name: RAID md0
+          - entity: sensor.server_monitor_raid_md1_status
+            name: RAID md1
+          - entity: binary_sensor.server_monitor_disk_sda_disk_failing
+            name: sda failing
+          - entity: binary_sensor.server_monitor_disk_sdb_disk_failing
+            name: sdb failing
+          - entity: binary_sensor.server_monitor_disk_sda_prefail_attributes_threshold
+            name: sda prefail threshold
+          - entity: binary_sensor.server_monitor_disk_sdb_prefail_attributes_threshold
+            name: sdb prefail threshold
+          - entity: binary_sensor.server_monitor_disk_sda_past_attributes_threshold
+            name: sda past threshold
+          - entity: binary_sensor.server_monitor_disk_sdb_past_attributes_threshold
+            name: sdb past threshold
+          - entity: binary_sensor.server_monitor_disk_sda_device_open_failed
+            name: sda open failed
+          - entity: binary_sensor.server_monitor_disk_sdb_device_open_failed
+            name: sdb open failed
+        state_filter:
+          - degraded
+          - "on"
+
+      - type: entities
+        title: Host Metrics
+        show_header_toggle: false
+        entities:
+          - sensor.server_monitor_server_cpu_load_percentage
+          - sensor.server_monitor_server_cpu_temperature_celsius
+          - sensor.server_monitor_server_memory_used_megabytes
+          - sensor.server_monitor_server_root_disk_usage_percentage
+          - sensor.server_monitor_server_var_log_disk_usage_percentage
+
+      - type: entities
+        title: RAID Arrays
+        show_header_toggle: false
+        entities:
+          - sensor.server_monitor_raid_md0_status
+          - sensor.server_monitor_raid_md1_status
+
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: entities
+            title: Disk sda
+            show_header_toggle: false
+            entities:
+              - sensor.server_monitor_disk_sda_smart_health_status
+              - sensor.server_monitor_disk_sda_max_temperature
+              - sensor.server_monitor_disk_sda_reallocated_sectors
+              - sensor.server_monitor_disk_sda_read_kilobytes_per_second
+              - sensor.server_monitor_disk_sda_write_kilobytes_per_second
+              - sensor.server_monitor_disk_sda_busy_time_percentage
+              - binary_sensor.server_monitor_disk_sda_disk_failing
+              - binary_sensor.server_monitor_disk_sda_smart_command_failed
+              - binary_sensor.server_monitor_disk_sda_device_open_failed
+
+          - type: entities
+            title: Disk sdb
+            show_header_toggle: false
+            entities:
+              - sensor.server_monitor_disk_sdb_smart_health_status
+              - sensor.server_monitor_disk_sdb_max_temperature
+              - sensor.server_monitor_disk_sdb_reallocated_sectors
+              - sensor.server_monitor_disk_sdb_read_kilobytes_per_second
+              - sensor.server_monitor_disk_sdb_write_kilobytes_per_second
+              - sensor.server_monitor_disk_sdb_busy_time_percentage
+              - binary_sensor.server_monitor_disk_sdb_disk_failing
+              - binary_sensor.server_monitor_disk_sdb_smart_command_failed
+              - binary_sensor.server_monitor_disk_sdb_device_open_failed
+
+      - type: history-graph
+        title: Host History
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - sensor.server_monitor_server_cpu_load_percentage
+          - sensor.server_monitor_server_cpu_temperature_celsius
+          - sensor.server_monitor_server_root_disk_usage_percentage
+
+      - type: history-graph
+        title: Disk I/O History
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - sensor.server_monitor_disk_sda_read_kilobytes_per_second
+          - sensor.server_monitor_disk_sda_write_kilobytes_per_second
+          - sensor.server_monitor_disk_sdb_read_kilobytes_per_second
+          - sensor.server_monitor_disk_sdb_write_kilobytes_per_second
+
+      - type: markdown
+        content: |
+          ## Adapting This Example
+          - Duplicate the disk cards for every device in your `devices` config.
+          - Add RAID cards for every array in your `raid_arrays` config.
+          - If Home Assistant created `_2` suffixed entity IDs, update the YAML to match.

@@ -1,0 +1,20 @@
+# Example Home Assistant YAML for mqtt-monitor.
+#
+# MQTT discovery creates the actual monitor entities automatically.
+# If MQTT is already configured through the Home Assistant UI, leave the
+# mqtt: block commented out and keep only the dashboard registration.
+
+# mqtt:
+#   broker: 192.168.1.10
+#   port: 1883
+#   username: !secret mqtt_user
+#   password: !secret mqtt_password
+
+lovelace_dashboards:
+  mqtt-monitor:
+    mode: yaml
+    title: MQTT Monitor
+    icon: mdi:server-network
+    show_in_sidebar: true
+    require_admin: false
+    filename: dashboards/mqtt-monitor-dashboard.yaml
