@@ -192,6 +192,23 @@ class TestMqttMonitor:
         assert result["smart_health_status"] is None
         assert result["smart_command_failed"] is False
 
+    def test_get_disk_info_detects_historical_temperature_threshold_event(self, setup_monitor):
+        config, logger = setup_monitor
+        smart_output = "\n".join(
+            [
+                "SMART overall-health self-assessment test result: PASSED",
+                "190 Airflow_Temperature_Cel 0x0022 061 033 040 Old_age Always In_the_past 39 (Min/Max 35/42 #2088)",
+                "194 Temperature_Celsius 0x0022 039 067 000 Old_age Always - 39 (0 10 0 0 0)",
+            ]
+        )
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
+            mock_run_cmd.side_effect = [
+                ("16000900661248", 0),
+                (smart_output, 1 << 5),
+            ]
+            result = get_disk_info(config, logger, "/dev/sde", full=True)
+        assert result["historical_temperature_limit_exceeded"] is True
+
     def test_get_disk_info_treats_mapper_device_as_logical_volume(self, setup_monitor):
         config, logger = setup_monitor
         with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch(

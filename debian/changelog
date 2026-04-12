@@ -1,3 +1,9 @@
+mqtt-monitor (1.1.0-0rc19) unstable; urgency=medium
+
+  * Detect Seagate-style historical SMART temperature threshold markers in `smartctl -a` output so past thermal events surface as dedicated warnings.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 21:25:00 +0200
+
 mqtt-monitor (1.1.0-0rc18) unstable; urgency=medium
 
   * Stop treating DS3512 multipath transport paths as SMART-capable disks in the monitor and Home Assistant discovery.

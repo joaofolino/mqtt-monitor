@@ -328,10 +328,10 @@ def parse_smart_output(config, logger, smart_output, device_path):
     historical_temperature_limit_exceeded = False
     for line in smart_lines:
         parts = line.split()
+        if "Temperature" in line and any(flag in line for flag in ("In_the_past", "Past")):
+            historical_temperature_limit_exceeded = True
         if "Temperature_Celsius" in line and len(parts) >= 10 and parts[9].isdigit():
             temperature_readings.append(int(parts[9]))
-            if any(flag in line for flag in ("In_the_past", "Past")):
-                historical_temperature_limit_exceeded = True
         elif line.startswith("Temperature Sensor 2:") and len(parts) > 3 and parts[3].isdigit():
             temperature_readings.append(int(parts[3]))
         elif line.startswith("Temperature Sensor") and len(parts) > 3 and parts[3].isdigit():
