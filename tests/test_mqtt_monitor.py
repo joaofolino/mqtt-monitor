@@ -163,8 +163,8 @@ class TestMqttMonitor:
     def test_check_package_version_reads_current_version_from_tuple(self, setup_monitor):
         config, logger = setup_monitor
         with patch("mqtt_monitor.requests.get") as mock_requests, patch("mqtt_monitor.run_cmd") as mock_run_cmd, patch("subprocess.run") as mock_subprocess_run:
-            mock_requests.return_value.json.return_value = {"tag_name": "v1.0.1-1"}
-            mock_run_cmd.return_value = ("1.0.0-1", 0)
+            mock_requests.return_value.json.return_value = {"tag_name": "v1.0.1-2"}
+            mock_run_cmd.return_value = ("1.0.1-1", 0)
             updated = check_package_version(config, logger)
         assert updated is True
         assert mock_subprocess_run.call_count == 2
@@ -176,3 +176,9 @@ class TestMqttMonitor:
         with patch.object(logger, "debug") as mock_debug:
             log(config, logger, "hidden", "DEBUG")
         mock_debug.assert_not_called()
+
+    def test_service_unit_grants_nvme_capabilities(self):
+        service_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "debian", "mqtt-monitor.service")
+        service_text = open(service_path, "r", encoding="utf-8").read()
+        assert "AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text
+        assert "CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text

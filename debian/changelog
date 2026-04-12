@@ -1,3 +1,10 @@
+mqtt-monitor (1.0.1-2) unstable; urgency=medium
+
+  * Grant the service the Linux capabilities needed for NVMe SMART reads.
+  * Keep the dedicated service account instead of falling back to root.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 13:50:00 +0200
+
 mqtt-monitor (1.0.1-1) unstable; urgency=medium
 
   * Fix SMART capacity caching so the service no longer crashes on restart.
