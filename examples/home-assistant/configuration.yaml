@@ -10,6 +10,13 @@
 #   username: !secret mqtt_user
 #   password: !secret mqtt_password
 
+lovelace:
+  resources:
+    - url: https://cdn.jsdelivr.net/gh/kalkih/mini-graph-card@v0.13.0/mini-graph-card-bundle.js
+      type: module
+    - url: https://cdn.jsdelivr.net/gh/dbuezas/lovelace-plotly-graph-card@v3.3.5/plotly-graph-card.js
+      type: module
+
 lovelace_dashboards:
   mqtt-monitor:
     mode: yaml

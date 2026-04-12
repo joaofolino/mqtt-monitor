@@ -241,6 +241,8 @@ class TestMqttMonitor:
         assert payloads["homeassistant/sensor/mqtt_monitor_container_web_status/config"]["name"] == "web"
         assert payloads["homeassistant/binary_sensor/mqtt_monitor_container_web_running/config"]["device_class"] == "running"
         assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["suggested_display_precision"] == 1
+        assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["state_class"] == "measurement"
+        assert payloads["homeassistant/sensor/mqtt_monitor_root_disk_usage_percentage/config"]["state_class"] == "measurement"
 
     def test_setup_sensors_restores_metric_context_in_friendly_names(self, setup_monitor):
         config, _ = setup_monitor
@@ -286,6 +288,9 @@ class TestMqttMonitor:
         assert payloads["homeassistant/sensor/disk_sda_max_temperature/config"]["name"] == "sda Max Temp"
         assert payloads["homeassistant/sensor/disk_sda_busy_time_percentage/config"]["name"] == "sda I/O Busy"
         assert payloads["homeassistant/sensor/disk_sda_busy_time_percentage/config"]["suggested_display_precision"] == 1
+        assert payloads["homeassistant/sensor/disk_sda_max_temperature/config"]["state_class"] == "measurement"
+        assert payloads["homeassistant/sensor/disk_sda_busy_time_percentage/config"]["state_class"] == "measurement"
+        assert "state_class" not in payloads["homeassistant/sensor/disk_sda_smart_health_status/config"]
 
     def test_monitor_device_name_does_not_duplicate_monitor_suffix(self, setup_monitor):
         config, _ = setup_monitor

@@ -7,6 +7,7 @@ It now ships with a V2 runtime that focuses on user-visible outcomes instead of 
 - automatic discovery of disks, RAID arrays, mount points, and LXC containers
 - first-class issues with start and resolve tracking
 - Home Assistant MQTT discovery for metrics, containers, and issue state
+- Home Assistant `state_class` metadata for graph-friendly time-series sensors
 - optional Home Assistant notifications for new and resolved issues
 - automatic generation of a Lovelace dashboard YAML file
 
@@ -34,6 +35,7 @@ Repo examples live under [`examples/home-assistant`](examples/home-assistant):
 - `dashboard/mqtt-monitor-dashboard.yaml` for a starter Lovelace view
 
 At runtime, V2 can also generate a dashboard automatically at the configured `dashboard_output_path`.
+The generated dashboard uses `mini-graph-card` for live sparklines and `lovelace-plotly-graph-card` for longer trend views.
 
 ## Development
 

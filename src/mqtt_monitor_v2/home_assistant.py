@@ -312,74 +312,117 @@ def disk_activity_score(disk) -> float:
     return disk.read_kilobytes_per_second + disk.write_kilobytes_per_second
 
 
-def formatted_sensor_template(entity: str, *, decimals: int = 1, integer_threshold: float | None = None) -> str:
-    """Return a Jinja template that formats a Home Assistant numeric state."""
-    state = f"(states('{entity}') | float(0))"
-    if decimals == 0:
-        return "{{ " + state + " | round(0) | int }}"
-    rounded_value = "(" + state + f" | round({decimals}))"
-    rounded = "{{ " + rounded_value + " }}"
-    if integer_threshold is None:
-        return rounded
-    return (
-        "{{ "
-        + "(("
-        + state
-        + f" | round(0) | int) if {state} >= {integer_threshold} else "
-        + rounded_value
-        + ") }}"
-    )
-
-
-def disk_load_label_template(entity: str) -> str:
-    """Return a Jinja template that adds qualitative context to disk busy percentage."""
-    return "\n".join(
-        [
-            "{% set busy = states('" + entity + "') | float(0) %}",
-            "{% if busy >= 80 %}Saturated",
-            "{% elif busy >= 50 %}High",
-            "{% elif busy >= 20 %}Moderate",
-            "{% else %}Low",
-            "{% endif %}",
-        ]
-    )
-
-
-def disk_io_markdown_card(disks) -> dict:
-    """Return a compact HTML table for disk I/O overview."""
-    lines = [
-        "<table>",
-        "<thead><tr><th>Disk</th><th>Current I/O</th></tr></thead>",
-        "<tbody>",
-    ]
-    for disk in disks:
-        read_entity = f"sensor.disk_{disk.slug}_read_kilobytes_per_second"
-        write_entity = f"sensor.disk_{disk.slug}_write_kilobytes_per_second"
-        busy_entity = f"sensor.disk_{disk.slug}_busy_time_percentage"
-        lines.append(
-            (
-                "<tr>"
-                f"<td><strong>{disk.name}</strong></td>"
-                "<td>"
-                f"<strong>Transfer</strong> R <code>{formatted_sensor_template(read_entity, integer_threshold=100)}</code>"
-                f" / W <code>{formatted_sensor_template(write_entity, integer_threshold=100)}</code> KB/s<br>"
-                f"<strong>Load</strong> {disk_load_label_template(busy_entity)} "
-                f"(<code>{formatted_sensor_template(busy_entity, decimals=0)}</code>%)"
-                "</td>"
-                "</tr>"
-            )
-        )
-    lines.extend(
-        [
-            "</tbody>",
-            "</table>",
-            "<p><small>Load is the share of the latest sample window each disk spent busy serving I/O.</small></p>",
-        ]
-    )
-    return {
-        "type": "markdown",
-        "content": "\n".join(lines),
+def mini_graph_card(
+    entity: str,
+    name: str,
+    icon: str,
+    *,
+    line_color: str | None = None,
+    hours_to_show: float = 10 / 60,
+    points_per_hour: int = 60,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> dict:
+    """Return a compact sparkline card for the live operations view."""
+    card = {
+        "type": "custom:mini-graph-card",
+        "name": name,
+        "icon": icon,
+        "entities": [{"entity": entity, "name": name}],
+        "hours_to_show": round(hours_to_show, 4),
+        "points_per_hour": points_per_hour,
+        "line_width": 3,
+        "font_size": 72,
+        "show": {
+            "labels": False,
+            "legend": False,
+            "points": False,
+        },
     }
+    if line_color is not None:
+        card["line_color"] = line_color
+    if lower_bound is not None:
+        card["lower_bound"] = lower_bound
+    if upper_bound is not None:
+        card["upper_bound"] = upper_bound
+    return card
+
+
+def plotly_graph_card(
+    title: str,
+    entities: list[dict],
+    *,
+    hours_to_show: str,
+    y_axis_title: str,
+    tick_suffix: str,
+) -> dict:
+    """Return a multi-line Plotly detail graph."""
+    return {
+        "type": "custom:plotly-graph",
+        "title": title,
+        "hours_to_show": hours_to_show,
+        "refresh_interval": "auto",
+        "entities": entities,
+        "defaults": {
+            "entity": {
+                "line": {
+                    "width": 3,
+                },
+            }
+        },
+        "layout": {
+            "height": 320,
+            "margin": {
+                "l": 48,
+                "r": 16,
+                "t": 36,
+                "b": 40,
+            },
+            "legend": {
+                "orientation": "h",
+            },
+            "xaxis": {
+                "showgrid": False,
+            },
+            "yaxis": {
+                "title": {"text": y_axis_title},
+                "ticksuffix": tick_suffix,
+                "fixedrange": True,
+            },
+        },
+        "config": {
+            "displayModeBar": False,
+            "scrollZoom": False,
+        },
+    }
+
+
+def plotly_series(entity: str, name: str) -> dict:
+    """Return one Plotly series definition."""
+    return {
+        "entity": entity,
+        "name": name,
+    }
+
+
+def measurement_state_class(metric_name: str) -> str | None:
+    """Return the Home Assistant state_class for a numeric metric."""
+    measurement_metrics = {
+        "active_issue_count",
+        "cpu_load_percentage",
+        "memory_used_megabytes",
+        "cpu_temperature_celsius",
+        "max_temperature",
+        "read_kilobytes_per_second",
+        "write_kilobytes_per_second",
+        "read_count_per_second",
+        "write_count_per_second",
+        "busy_time_percentage",
+        "disk_usage_percentage",
+    }
+    if metric_name in measurement_metrics:
+        return "measurement"
+    return None
 
 
 def metric_label(metric_name: str) -> str:
@@ -455,6 +498,21 @@ def build_dashboard_view(config, snapshot) -> dict:
         snapshot.disks,
         key=lambda disk: (-disk_activity_score(disk), -disk.busy_time_percentage, disk.name),
     )
+    sparkline_filesystems = primary_filesystems[:4]
+    sparkline_temperature_disks = temperature_disks[:4]
+    sparkline_activity_disks = activity_disks[:4]
+    temperature_trend_series = [
+        plotly_series(f"sensor.disk_{disk.slug}_max_temperature", disk.name)
+        for disk in temperature_disks
+    ]
+    activity_trend_series = [
+        plotly_series(f"sensor.disk_{disk.slug}_busy_time_percentage", disk.name)
+        for disk in activity_disks[:6]
+    ]
+    filesystem_trend_series = [
+        plotly_series(f"sensor.{prefix}_{filesystem.slug}_disk_usage_percentage", compact_path_label(filesystem.mount_point))
+        for filesystem in primary_filesystems[:6]
+    ]
 
     overview_cards = [
         {"type": "heading", "heading": "Health", "icon": "mdi:server-network"},
@@ -548,23 +606,59 @@ def build_dashboard_view(config, snapshot) -> dict:
         },
     ]
 
+    live_signal_cards = [{"type": "heading", "heading": "Live Signals", "icon": "mdi:pulse"}]
+    live_signal_graphs = [
+        mini_graph_card(f"sensor.{prefix}_cpu_load_percentage", "CPU Load", "mdi:cpu-64-bit", line_color="#d97706", upper_bound=100),
+        mini_graph_card(f"sensor.{prefix}_memory_used_megabytes", "Memory Used", "mdi:memory", line_color="#2563eb", lower_bound=0),
+    ]
+    if snapshot.host.cpu_temperature_celsius is not None:
+        live_signal_graphs.append(
+            mini_graph_card(
+                f"sensor.{prefix}_cpu_temperature_celsius",
+                "CPU Temp",
+                "mdi:thermometer",
+                line_color="#dc2626",
+                lower_bound=0,
+            )
+        )
+    if root_filesystem is not None:
+        live_signal_graphs.append(
+            mini_graph_card(
+                f"sensor.{prefix}_{root_filesystem.slug}_disk_usage_percentage",
+                "Root Usage",
+                "mdi:harddisk",
+                line_color="#b45309",
+                lower_bound=0,
+                upper_bound=100,
+            )
+        )
+    if live_signal_graphs:
+        live_signal_cards.append(
+            {
+                "type": "grid",
+                "columns": 2,
+                "square": False,
+                "cards": live_signal_graphs,
+            }
+        )
+
     storage_cards = [{"type": "heading", "heading": "Core Storage", "icon": "mdi:harddisk"}]
-    if primary_filesystems:
+    if sparkline_filesystems:
         storage_cards.append(
             {
                 "type": "grid",
                 "columns": 2,
                 "square": False,
                 "cards": [
-                    gauge_card(
+                    mini_graph_card(
                         f"sensor.{prefix}_{filesystem.slug}_disk_usage_percentage",
                         compact_path_label(filesystem.mount_point),
                         "mdi:harddisk",
-                        maximum=100,
-                        yellow=75,
-                        red=90,
+                        line_color="#2563eb",
+                        lower_bound=0,
+                        upper_bound=100,
                     )
-                    for filesystem in primary_filesystems
+                    for filesystem in sparkline_filesystems
                 ],
             }
         )
@@ -623,29 +717,108 @@ def build_dashboard_view(config, snapshot) -> dict:
     else:
         container_cards.append({"type": "markdown", "content": "No additional containers discovered."})
 
-    disk_heat_cards = [{"type": "heading", "heading": "Disk Heat", "icon": "mdi:thermometer"}]
-    if temperature_disks:
+    disk_heat_cards = [{"type": "heading", "heading": "Live Heat", "icon": "mdi:thermometer"}]
+    if sparkline_temperature_disks:
         disk_heat_cards.append(
             {
                 "type": "grid",
-                "columns": 3,
+                "columns": 2,
                 "square": False,
-                "cards": [disk_heat_card(disk) for disk in temperature_disks],
+                "cards": [
+                    mini_graph_card(
+                        f"sensor.disk_{disk.slug}_max_temperature",
+                        disk.name,
+                        "mdi:thermometer",
+                        line_color="#dc2626",
+                        lower_bound=0,
+                    )
+                    for disk in sparkline_temperature_disks
+                ],
+            }
+        )
+    else:
+        disk_heat_cards.append({"type": "markdown", "content": "No physical disk temperature history is available yet."})
+
+    disk_activity_cards = [{"type": "heading", "heading": "Live Load", "icon": "mdi:gauge"}]
+    if sparkline_activity_disks:
+        disk_activity_cards.append(
+            {
+                "type": "grid",
+                "columns": 2,
+                "square": False,
+                "cards": [
+                    mini_graph_card(
+                        f"sensor.disk_{disk.slug}_busy_time_percentage",
+                        f"{disk.name} Busy",
+                        "mdi:gauge",
+                        line_color="#0f766e",
+                        lower_bound=0,
+                        upper_bound=100,
+                    )
+                    for disk in sparkline_activity_disks
+                ],
+            }
+        )
+    else:
+        disk_activity_cards.append({"type": "markdown", "content": "No disk activity history is available yet."})
+
+    detail_cards = []
+    if temperature_trend_series:
+        detail_cards.append(
+            {
+                "cards": [
+                    {"type": "heading", "heading": "Temperature Detail (24h)", "icon": "mdi:chart-line"},
+                    plotly_graph_card(
+                        "Physical Disk Temperature",
+                        temperature_trend_series,
+                        hours_to_show="24h",
+                        y_axis_title="Temperature",
+                        tick_suffix=" C",
+                    ),
+                ]
+            }
+        )
+    if activity_trend_series:
+        detail_cards.append(
+            {
+                "cards": [
+                    {"type": "heading", "heading": "Load Detail (24h)", "icon": "mdi:chart-timeline-variant"},
+                    plotly_graph_card(
+                        "Disk Busy Time",
+                        activity_trend_series,
+                        hours_to_show="24h",
+                        y_axis_title="Busy",
+                        tick_suffix="%",
+                    ),
+                ]
+            }
+        )
+    if filesystem_trend_series:
+        detail_cards.append(
+            {
+                "cards": [
+                    {"type": "heading", "heading": "Storage Detail (7d)", "icon": "mdi:chart-areaspline"},
+                    plotly_graph_card(
+                        "Filesystem Usage",
+                        filesystem_trend_series,
+                        hours_to_show="7d",
+                        y_axis_title="Usage",
+                        tick_suffix="%",
+                    ),
+                ]
             }
         )
 
-    disk_activity_cards = [{"type": "heading", "heading": "Disk I/O", "icon": "mdi:pulse"}]
-    if activity_disks:
-        disk_activity_cards.append(disk_io_markdown_card(activity_disks))
-
     sections = [
         {"cards": overview_cards},
+        {"cards": live_signal_cards},
         {"cards": storage_cards},
         {"cards": expected_service_cards},
         {"cards": container_cards},
         {"cards": disk_heat_cards},
         {"cards": disk_activity_cards},
     ]
+    sections.extend(detail_cards)
 
     logical_disks = [disk for disk in snapshot.disks if is_logical_disk(disk)]
     physical_disks = [disk for disk in snapshot.disks if not is_logical_disk(disk)]
@@ -755,6 +928,9 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             "state_topic": f"{config.topic_prefix}/host/{suffix}",
             "unit_of_measurement": unit,
         }
+        state_class = measurement_state_class(suffix)
+        if state_class is not None:
+            payload["state_class"] = state_class
         precision = sensor_precision(suffix)
         if precision is not None:
             payload["suggested_display_precision"] = precision
@@ -788,6 +964,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 "unit_of_measurement": "%",
                 "json_attributes_topic": f"{config.topic_prefix}/host/{mount.slug}_disk_usage_attributes",
                 "suggested_display_precision": 0,
+                "state_class": measurement_state_class("disk_usage_percentage"),
             },
         )
 
@@ -803,6 +980,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             "state_topic": f"{config.topic_prefix}/issues/active_issue_count",
             "json_attributes_topic": f"{config.topic_prefix}/issues/summary",
             "icon": "mdi:alert",
+            "state_class": measurement_state_class("active_issue_count"),
         },
     )
     publish_discovery(
@@ -851,6 +1029,9 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             }
             if unit is not None:
                 payload["unit_of_measurement"] = unit
+            state_class = measurement_state_class(metric_name)
+            if state_class is not None:
+                payload["state_class"] = state_class
             precision = sensor_precision(metric_name)
             if precision is not None:
                 payload["suggested_display_precision"] = precision

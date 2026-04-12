@@ -10,6 +10,7 @@
 Compared with the original prototype-oriented setup, V2 now gives Home Assistant:
 
 - host, disk, RAID, filesystem, and LXC container entities
+- measurement-style `state_class` metadata for time-series monitor sensors
 - an active-issue count sensor
 - a highest-issue-severity sensor
 - per-issue binary sensors
@@ -21,10 +22,11 @@ At minimum, Home Assistant needs:
 
 1. a working MQTT integration connected to the same broker as `mqtt-monitor`
 2. the monitor publishing discovery and state topics
+3. the dashboard resources for `mini-graph-card` and `plotly-graph` if you want the generated V2 dashboard to render fully
 
 For notifications, it also needs:
 
-3. a valid Home Assistant base URL and long-lived access token in `mqtt-monitor.conf`
+4. a valid Home Assistant base URL and long-lived access token in `mqtt-monitor.conf`
 
 ## Common Entity IDs
 
@@ -104,13 +106,16 @@ The generated dashboard focuses on:
 
 - host overview
 - active issues
-- core filesystems
+- short-range sparkline cards for live signals, storage, disk heat, and disk load
 - RAID arrays
 - expected versus optional LXC containers
-- disk heat and disk I/O summaries
+- Plotly detail graphs for 24h and 7d trends
 - one detailed card per discovered disk
 
-That keeps the default experience useful without requiring custom cards.
+The generated dashboard expects these Lovelace resources:
+
+- `mini-graph-card`
+- `lovelace-plotly-graph-card`
 
 ## Troubleshooting
 

@@ -107,6 +107,18 @@ V2 adds two setup conveniences:
 
 - a generated dashboard YAML file at `dashboard_output_path`
 - optional notifications through the Home Assistant REST API
+- MQTT discovery payloads with `state_class` for key monitor time-series sensors
+
+If you want to use the generated dashboard as-is, add the required custom card resources in Home Assistant:
+
+```yaml
+lovelace:
+  resources:
+    - url: https://cdn.jsdelivr.net/gh/kalkih/mini-graph-card@v0.13.0/mini-graph-card-bundle.js
+      type: module
+    - url: https://cdn.jsdelivr.net/gh/dbuezas/lovelace-plotly-graph-card@v3.3.5/plotly-graph-card.js
+      type: module
+```
 
 To enable notifications, set:
 
