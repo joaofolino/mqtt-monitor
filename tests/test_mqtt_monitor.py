@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,7 +10,7 @@ sys.path.insert(0, "/app/src")
 sys.path.insert(0, "./src")
 
 from mqtt_monitor import Config  # pylint: disable=wrong-import-position
-from mqtt_monitor_v2.home_assistant import setup_sensors  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.home_assistant import monitor_device, setup_sensors  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.models import ContainerMetric, FilesystemMetric, HostMetrics, MonitorSnapshot  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.system import (  # pylint: disable=wrong-import-position
     check_package_version,
@@ -219,6 +220,31 @@ class TestMqttMonitor:
         assert "homeassistant/sensor/server_data_ds3512_acceleration-nextcloud_disk_usage_percentage/config" not in published_topics
         assert "homeassistant/sensor/server_container_acceleration_nextcloud_status/config" in published_topics
         assert "homeassistant/sensor/server_container_acceleration-nextcloud_status/config" not in published_topics
+
+    def test_setup_sensors_uses_shorter_friendly_names(self, setup_monitor):
+        config, _ = setup_monitor
+        config.self_name = "mqtt-monitor"
+        client = MagicMock()
+        snapshot = MonitorSnapshot(
+            generated_at="2026-04-12T12:00:00Z",
+            host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+            filesystems=[FilesystemMetric(mount_point="/", usage_percentage=1, free_space="100G")],
+            disks=[],
+            raids=[],
+            containers=[ContainerMetric(name="web", status="RUNNING", autostart=True)],
+        )
+        setup_sensors(config, client, snapshot=snapshot)
+        payloads = {call.args[0]: json.loads(call.args[1]) for call in client.publish.call_args_list}
+
+        assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["name"] == "CPU Load"
+        assert payloads["homeassistant/sensor/mqtt_monitor_root_disk_usage_percentage/config"]["name"] == "Root Usage"
+        assert payloads["homeassistant/sensor/mqtt_monitor_container_web_status/config"]["name"] == "web"
+
+    def test_monitor_device_name_does_not_duplicate_monitor_suffix(self, setup_monitor):
+        config, _ = setup_monitor
+        config.self_name = "mqtt-monitor"
+        device = monitor_device(config)
+        assert device["name"] == "Mqtt Monitor"
 
     def test_check_package_version_reads_current_version_from_tuple(self, setup_monitor):
         config, logger = setup_monitor
