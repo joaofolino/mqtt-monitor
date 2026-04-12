@@ -152,6 +152,20 @@ class TestMqttMonitor:
         assert result["max_temperature"] == 28
         assert result["smart_command_failed"] is True
 
+    def test_get_disk_info_treats_mapper_device_as_logical_volume(self, setup_monitor):
+        config, logger = setup_monitor
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch(
+            "mqtt_monitor_v2.system.os.path.realpath",
+            return_value="/dev/dm-1",
+        ), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
+            mock_run_cmd.side_effect = [
+                ("10995116277760", 0),
+            ]
+            result = get_disk_info(config, logger, "/dev/mapper/mpatha-part1", full=True)
+        assert result["availability"] == "online"
+        assert result["smart_health_status"] is None
+        assert result["capacity"] == 10240
+
     def test_get_disk_io_returns_counter_dict(self, setup_monitor):
         config, logger = setup_monitor
         io_stats = MagicMock(

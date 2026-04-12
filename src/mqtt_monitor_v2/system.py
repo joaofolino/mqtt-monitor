@@ -411,7 +411,7 @@ def get_disk_info(config, logger, device_path, full=False):
             "self_test_log_errors": cached_info.get("self_test_log_errors", False),
         }
 
-    if device_path.startswith("/dev/md"):
+    if is_logical_device_path(device_path):
         return {
             "name": device_name,
             "capacity": capacity,
@@ -566,7 +566,38 @@ def normalize_device_path(device: str) -> str:
     return device if device.startswith("/dev/") else f"/dev/{device}"
 
 
-def discover_disk_devices(config) -> list[str]:
+def device_display_name(device_path: str) -> str:
+    """Return the preferred external name for a device path."""
+    return os.path.basename(device_path)
+
+
+def io_counter_device_name(device_path: str) -> str:
+    """Return the kernel device name used by psutil for I/O counters."""
+    return os.path.basename(os.path.realpath(device_path))
+
+
+def is_logical_device_path(device_path: str) -> bool:
+    """Return whether a device path represents a logical block device."""
+    if device_path.startswith("/dev/md") or device_path.startswith("/dev/mapper/"):
+        return True
+    return os.path.basename(os.path.realpath(device_path)).startswith("dm-")
+
+
+def discover_mapper_devices_for_mounts(mount_points: list[str]) -> list[str]:
+    """Return device-mapper paths backing monitored mount points."""
+    mapper_devices = []
+    monitored_mounts = set(mount_points)
+    for partition in psutil.disk_partitions(all=False):
+        if partition.mountpoint not in monitored_mounts:
+            continue
+        if not partition.device.startswith("/dev/mapper/"):
+            continue
+        if os.path.exists(partition.device):
+            mapper_devices.append(partition.device)
+    return unique_preserving_order(mapper_devices)
+
+
+def discover_disk_devices(config, mount_points: list[str] | None = None) -> list[str]:
     """Discover block devices to monitor."""
     devices = [normalize_device_path(device) for device in config.devices]
     if config.auto_discover_disks and os.path.isdir("/sys/block"):
@@ -576,6 +607,8 @@ def discover_disk_devices(config) -> list[str]:
             device_path = normalize_device_path(device_name)
             if os.path.exists(device_path):
                 devices.append(device_path)
+    if mount_points:
+        devices.extend(discover_mapper_devices_for_mounts(mount_points))
     return unique_preserving_order(devices)
 
 
@@ -695,9 +728,9 @@ def collect_snapshot(config, logger, state: MonitorState, current_time: float | 
     delta_time = config.sleep_interval if state.previous_loop_time is None else max(now - state.previous_loop_time, 1e-6)
     state.previous_loop_time = now
 
-    raid_status = get_raid_status(config, logger)
-    device_paths = discover_disk_devices(config)
     mount_points = discover_mount_points(config)
+    raid_status = get_raid_status(config, logger)
+    device_paths = discover_disk_devices(config, mount_points=mount_points)
     array_names = discover_raid_arrays(config, raid_status)
     containers = discover_lxc_containers(config, logger)
 
@@ -713,8 +746,8 @@ def collect_snapshot(config, logger, state: MonitorState, current_time: float | 
 
     disks = []
     for device_path in device_paths:
-        device_name = device_path.split("/")[-1]
-        current_io = get_disk_io(config, logger, device_name)
+        device_name = device_display_name(device_path)
+        current_io = get_disk_io(config, logger, io_counter_device_name(device_path))
         read_kbps, write_kbps, read_ops, write_ops, busy_percent = calculate_disk_rates(
             config,
             logger,

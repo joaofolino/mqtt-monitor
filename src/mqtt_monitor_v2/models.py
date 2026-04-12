@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 
 @dataclass
@@ -109,6 +110,13 @@ class DiskMetric:
     past_attributes_threshold: bool
     device_error_log_errors: bool
     self_test_log_errors: bool
+
+    @property
+    def slug(self) -> str:
+        """Return a Home Assistant-safe disk identifier."""
+        slug = re.sub(r"[^a-z0-9_]+", "_", self.name.lower())
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug or "disk"
 
 
 @dataclass

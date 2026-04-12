@@ -19,6 +19,13 @@ def entity_prefix(config) -> str:
     return prefix or "mqtt_monitor"
 
 
+def disk_entity_slug(disk_name: str) -> str:
+    """Return a Home Assistant-safe disk object identifier suffix."""
+    slug = re.sub(r"[^a-z0-9_]+", "_", disk_name.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "disk"
+
+
 def monitor_device(config) -> dict:
     """Return the shared Home Assistant device payload."""
     prefix = entity_prefix(config)
@@ -129,6 +136,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
 
     disk_names = [disk.name for disk in snapshot.disks] if snapshot else [device_path.split("/")[-1] for device_path in config.devices]
     for disk_name in disk_names:
+        disk_slug = disk_entity_slug(disk_name)
         metric_specs = [
             ("max_temperature", "C"),
             ("power_on_hours", "h"),
@@ -148,8 +156,8 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         for metric_name, unit in metric_specs:
             payload = {
                 "name": f"Disk {disk_name} {metric_name.replace('_', ' ').title()}",
-                "object_id": f"disk_{disk_name}_{metric_name}",
-                "unique_id": f"{prefix}_monitor_disk_{disk_name}_{metric_name}",
+                "object_id": f"disk_{disk_slug}_{metric_name}",
+                "unique_id": f"{prefix}_monitor_disk_{disk_slug}_{metric_name}",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{metric_name}",
                 "availability_topic": f"{config.topic_prefix}/disk/{disk_name}/availability",
@@ -160,7 +168,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 payload["unit_of_measurement"] = unit
             if metric_name == "smart_health_status":
                 payload["json_attributes_topic"] = f"{config.topic_prefix}/disk/{disk_name}/attributes"
-            publish_discovery(client, "sensor", f"disk_{disk_name}_{metric_name}", payload)
+            publish_discovery(client, "sensor", f"disk_{disk_slug}_{metric_name}", payload)
 
         for flag in [
             "command_line_parse_error",
@@ -175,11 +183,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             publish_discovery(
                 client,
                 "binary_sensor",
-                f"disk_{disk_name}_{flag}",
+                f"disk_{disk_slug}_{flag}",
                 {
                     "name": f"Disk {disk_name} {flag.replace('_', ' ').title()}",
-                    "object_id": f"disk_{disk_name}_{flag}",
-                    "unique_id": f"{prefix}_monitor_disk_{disk_name}_{flag}",
+                    "object_id": f"disk_{disk_slug}_{flag}",
+                    "unique_id": f"{prefix}_monitor_disk_{disk_slug}_{flag}",
                     "device": device,
                     "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{flag}",
                     "payload_on": "true",
@@ -519,16 +527,16 @@ def build_dashboard_yaml(config, snapshot) -> str:
             f"        title: Disk {disk.name}",
             "        show_header_toggle: false",
             "        entities:",
-            f"          - sensor.disk_{disk.name}_smart_health_status",
-            f"          - sensor.disk_{disk.name}_capacity_gib",
-            f"          - sensor.disk_{disk.name}_max_temperature",
-            f"          - sensor.disk_{disk.name}_power_on_hours",
+            f"          - sensor.disk_{disk.slug}_smart_health_status",
+            f"          - sensor.disk_{disk.slug}_capacity_gib",
+            f"          - sensor.disk_{disk.slug}_max_temperature",
+            f"          - sensor.disk_{disk.slug}_power_on_hours",
         ])
         if config.enable_io_mqtt:
             lines.extend([
-                f"          - sensor.disk_{disk.name}_read_kilobytes_per_second",
-                f"          - sensor.disk_{disk.name}_write_kilobytes_per_second",
-                f"          - sensor.disk_{disk.name}_busy_time_percentage",
+                f"          - sensor.disk_{disk.slug}_read_kilobytes_per_second",
+                f"          - sensor.disk_{disk.slug}_write_kilobytes_per_second",
+                f"          - sensor.disk_{disk.slug}_busy_time_percentage",
             ])
 
     return "\n".join(lines) + "\n"

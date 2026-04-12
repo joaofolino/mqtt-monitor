@@ -17,7 +17,7 @@ from mqtt_monitor_v2.models import (  # pylint: disable=wrong-import-position
     MonitorState,
     RaidMetric,
 )
-from mqtt_monitor_v2.system import discover_mount_points  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.system import discover_disk_devices, discover_mount_points  # pylint: disable=wrong-import-position
 
 
 def test_issue_engine_tracks_new_and_resolved_issues(tmp_path):
@@ -288,3 +288,127 @@ def test_discover_mount_points_skips_lxc_bind_mounts(tmp_path):
     assert "/" in mounts
     assert "/data" in mounts
     assert "/var/lib/lxc/web/rootfs/data" not in mounts
+
+
+def test_discover_disk_devices_includes_mapper_backed_monitored_mounts(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=["/dev/sda"],
+        raid_arrays=["md0"],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/data/ds3512/acceleration-nextcloud"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+        auto_discover_disks=False,
+    )
+
+    partitions = [
+        SimpleNamespace(
+            device="/dev/mapper/mpatha-part1",
+            mountpoint="/data/ds3512/acceleration-nextcloud",
+            fstype="ext4",
+        )
+    ]
+    with patch("mqtt_monitor_v2.system.psutil.disk_partitions", return_value=partitions), patch(
+        "mqtt_monitor_v2.system.os.path.exists",
+        return_value=True,
+    ):
+        devices = discover_disk_devices(config, mount_points=config.disk_usage_mounts)
+
+    assert "/dev/sda" in devices
+    assert "/dev/mapper/mpatha-part1" in devices
+
+
+def test_build_dashboard_yaml_sanitizes_disk_names(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=["/dev/mapper/mpatha-part1"],
+        raid_arrays=[],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/data/ds3512/acceleration-nextcloud"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+    )
+    snapshot = MonitorSnapshot(
+        generated_at="2026-04-12T12:00:00Z",
+        host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+        filesystems=[FilesystemMetric(mount_point="/data/ds3512/acceleration-nextcloud", usage_percentage=55, free_space="100G")],
+        disks=[
+            DiskMetric(
+                path="/dev/mapper/mpatha-part1",
+                name="mpatha-part1",
+                capacity_gib=10240,
+                capacity_bytes="10995116277760",
+                availability="online",
+                smart_health_status=None,
+                max_temperature=None,
+                power_on_hours=None,
+                reallocated_sectors=None,
+                spin_up_count=None,
+                read_kilobytes_per_second=1.0,
+                write_kilobytes_per_second=2.0,
+                read_count_per_second=3.0,
+                write_count_per_second=4.0,
+                busy_time_percentage=5.0,
+                command_line_parse_error=False,
+                device_open_failed=False,
+                smart_command_failed=False,
+                disk_failing=False,
+                prefail_attributes_threshold=False,
+                past_attributes_threshold=False,
+                device_error_log_errors=False,
+                self_test_log_errors=False,
+            )
+        ],
+        raids=[],
+        containers=[],
+    )
+
+    dashboard_yaml = build_dashboard_yaml(config, snapshot)
+
+    assert "sensor.disk_mpatha_part1_capacity_gib" in dashboard_yaml
+    assert "sensor.disk_mpatha-part1_capacity_gib" not in dashboard_yaml
