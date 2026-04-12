@@ -137,6 +137,8 @@ lovelace:
       type: module
 ```
 
+Use either the HACS resource or the `/local` resource for a given card, not both.
+
 To enable notifications, set:
 
 - `url`

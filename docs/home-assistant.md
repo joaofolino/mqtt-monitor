@@ -77,6 +77,9 @@ Two supported installation paths are:
 2. Manual `/local` install
    Download the release bundles into `/config/www` and register `/local/mini-graph-card-bundle.js` and `/local/plotly-graph-card.js` as Lovelace module resources.
 
+Choose one path per card.
+Do not register the same card from both HACS and `/local`, or Home Assistant may try to define the same custom element twice.
+
 Manual install example:
 
 ```bash
