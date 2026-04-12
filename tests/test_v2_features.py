@@ -196,10 +196,12 @@ def test_build_dashboard_yaml_includes_v2_sections(tmp_path):
     assert "binary_sensor.server_container_web_running" in dashboard_yaml
     assert "sensor.disk_sda_capacity_gib" in dashboard_yaml
     assert "heading: Expected Services" in dashboard_yaml
-    assert "heading: Live Signals" in dashboard_yaml
-    assert "heading: Live Heat" in dashboard_yaml
-    assert "heading: Live Load" in dashboard_yaml
+    assert "heading: Live Signals (10m)" in dashboard_yaml
+    assert "heading: Core Storage (10m)" in dashboard_yaml
+    assert "heading: Live Heat (10m)" in dashboard_yaml
+    assert "heading: Live Load (10m)" in dashboard_yaml
     assert "heading: Temperature Detail (24h)" in dashboard_yaml
+    assert "heading: Load Detail (24h)" in dashboard_yaml
     assert "heading: Storage Detail (7d)" in dashboard_yaml
     assert "heading: Physical Disk Detail" in dashboard_yaml
     assert "name: SMART Health" in dashboard_yaml

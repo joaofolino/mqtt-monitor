@@ -1,3 +1,10 @@
+mqtt-monitor (1.1.0-0rc17) unstable; urgency=medium
+
+  * Label the 10-minute sparkline sections in the generated Home Assistant dashboard so each chart group states its time window.
+  * Recommend cache-busting /local resource URLs for Plotly and mini-graph custom cards to avoid stale frontend bundles.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 21:35:00 +0200
+
 mqtt-monitor (1.1.0-0rc16) unstable; urgency=medium
 
   * Document the generated dashboard's Plotly and sparkline cards using HACS or /local resources instead of broken external CDN examples.

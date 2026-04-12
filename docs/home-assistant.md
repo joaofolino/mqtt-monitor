@@ -92,9 +92,9 @@ Then register:
 ```yaml
 lovelace:
   resources:
-    - url: /local/mini-graph-card-bundle.js
+    - url: /local/mini-graph-card-bundle.js?v=0.13.0
       type: module
-    - url: /local/plotly-graph-card.js
+    - url: /local/plotly-graph-card.js?v=3.3.5
       type: module
 ```
 

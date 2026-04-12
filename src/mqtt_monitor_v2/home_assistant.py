@@ -606,7 +606,7 @@ def build_dashboard_view(config, snapshot) -> dict:
         },
     ]
 
-    live_signal_cards = [{"type": "heading", "heading": "Live Signals", "icon": "mdi:pulse"}]
+    live_signal_cards = [{"type": "heading", "heading": "Live Signals (10m)", "icon": "mdi:pulse"}]
     live_signal_graphs = [
         mini_graph_card(f"sensor.{prefix}_cpu_load_percentage", "CPU Load", "mdi:cpu-64-bit", line_color="#d97706", upper_bound=100),
         mini_graph_card(f"sensor.{prefix}_memory_used_megabytes", "Memory Used", "mdi:memory", line_color="#2563eb", lower_bound=0),
@@ -642,7 +642,7 @@ def build_dashboard_view(config, snapshot) -> dict:
             }
         )
 
-    storage_cards = [{"type": "heading", "heading": "Core Storage", "icon": "mdi:harddisk"}]
+    storage_cards = [{"type": "heading", "heading": "Core Storage (10m)", "icon": "mdi:harddisk"}]
     if sparkline_filesystems:
         storage_cards.append(
             {
@@ -717,7 +717,7 @@ def build_dashboard_view(config, snapshot) -> dict:
     else:
         container_cards.append({"type": "markdown", "content": "No additional containers discovered."})
 
-    disk_heat_cards = [{"type": "heading", "heading": "Live Heat", "icon": "mdi:thermometer"}]
+    disk_heat_cards = [{"type": "heading", "heading": "Live Heat (10m)", "icon": "mdi:thermometer"}]
     if sparkline_temperature_disks:
         disk_heat_cards.append(
             {
@@ -739,7 +739,7 @@ def build_dashboard_view(config, snapshot) -> dict:
     else:
         disk_heat_cards.append({"type": "markdown", "content": "No physical disk temperature history is available yet."})
 
-    disk_activity_cards = [{"type": "heading", "heading": "Live Load", "icon": "mdi:gauge"}]
+    disk_activity_cards = [{"type": "heading", "heading": "Live Load (10m)", "icon": "mdi:gauge"}]
     if sparkline_activity_disks:
         disk_activity_cards.append(
             {
