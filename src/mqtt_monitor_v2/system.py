@@ -285,9 +285,14 @@ def parse_smart_output(config, logger, smart_output, device_path):
     smart_lines = smart_output.splitlines()
     smart_health_status = None
     for line in smart_lines:
-        if "SMART overall-health self-assessment test result:" not in line:
+        if "SMART overall-health self-assessment test result:" in line:
+            status = line.split(":")[-1].strip().upper()
+        elif line.startswith("SMART Health Status:"):
+            status = line.split(":", 1)[1].strip().upper()
+            if status == "OK":
+                status = "PASSED"
+        else:
             continue
-        status = line.split(":")[-1].strip().upper()
         if status in {"PASSED", "FAILED", "UNKNOWN"}:
             smart_health_status = status
         else:
@@ -321,6 +326,8 @@ def parse_smart_output(config, logger, smart_output, device_path):
             temperature_readings.append(int(parts[3]))
         elif line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
             temperature_readings.append(int(parts[1]))
+        elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
+            temperature_readings.append(int(parts[3]))
         elif "Power_On_Hours" in line and len(parts) >= 10 and parts[9].isdigit():
             power_on_hours = int(parts[9])
         elif line.startswith("Power On Hours:") and len(parts) > 3 and parts[3].isdigit():
@@ -426,6 +433,7 @@ def get_disk_info(config, logger, device_path, full=False):
         }
 
     device_types = ["nvme", "auto"] if "nvme" in device_path else ["sat", "scsi", "auto"]
+    last_result = None
     for device_type in device_types:
         smart_output, exit_code = run_cmd(config, logger, ["smartctl", "-a", "-d", device_type, device_path])
         if not smart_output:
@@ -441,10 +449,15 @@ def get_disk_info(config, logger, device_path, full=False):
         disk_smart_info.update(exit_flags)
         if exit_flags["command_line_parse_error"] or exit_flags["device_open_failed"]:
             disk_smart_info["availability"] = "offline"
+            last_result = disk_smart_info
+            log(config, logger, f"{device_path} probe with -d {device_type} failed, trying next mode", "DEBUG")
+            continue
         log(config, logger, f"{device_path} availability: {disk_smart_info['availability']}", "DEBUG")
         return disk_smart_info
 
     log(config, logger, f"Failed to get SMART data for {device_path} after all attempts", "ERROR")
+    if last_result:
+        return last_result
     return {
         "name": device_name,
         "capacity": capacity,

@@ -1,4 +1,4 @@
-mqtt-monitor (1.1.0-0rc3) unstable; urgency=medium
+mqtt-monitor (1.1.0-0rc4) unstable; urgency=medium
 
   * Introduce the V2 runtime with inventory discovery for disks, RAID, mounts, and LXC.
   * Add a first-class issue engine with active and resolved transitions.
@@ -6,8 +6,9 @@ mqtt-monitor (1.1.0-0rc3) unstable; urgency=medium
   * Add optional Home Assistant notifications and package the runtime state directory.
   * Compare package versions before self-updating so RC builds do not downgrade to latest stable.
   * Sanitize Home Assistant entity prefixes and skip noisy LXC bind mounts in filesystem discovery.
+  * Retry non-NVMe SMART probes across device modes and parse SCSI SMART health correctly.
 
- -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 15:05:00 +0200
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 15:15:00 +0200
 
 mqtt-monitor (1.0.1-2) unstable; urgency=medium
 

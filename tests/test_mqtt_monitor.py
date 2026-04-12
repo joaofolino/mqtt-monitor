@@ -125,6 +125,33 @@ class TestMqttMonitor:
         assert result["smart_health_status"] == "PASSED"
         assert result["smart_command_failed"] is True
 
+    def test_get_disk_info_falls_back_to_scsi_when_sat_probe_fails(self, setup_monitor):
+        config, logger = setup_monitor
+        sat_error_output = "\n".join(
+            [
+                "Read Device Identity failed: scsi error unsupported scsi opcode",
+                "A mandatory SMART command failed: exiting.",
+            ]
+        )
+        scsi_output = "\n".join(
+            [
+                "SMART support is:     Enabled",
+                "SMART Health Status: OK",
+                "Current Drive Temperature:     28 C",
+            ]
+        )
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
+            mock_run_cmd.side_effect = [
+                ("1099511627776", 0),
+                (sat_error_output, 1 << 1),
+                (scsi_output, 1 << 2),
+            ]
+            result = get_disk_info(config, logger, "/dev/sda", full=True)
+        assert result["availability"] == "online"
+        assert result["smart_health_status"] == "PASSED"
+        assert result["max_temperature"] == 28
+        assert result["smart_command_failed"] is True
+
     def test_get_disk_io_returns_counter_dict(self, setup_monitor):
         config, logger = setup_monitor
         io_stats = MagicMock(
