@@ -11,7 +11,7 @@ sys.path.insert(0, "./src")
 
 from mqtt_monitor import Config  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.home_assistant import monitor_device, setup_sensors  # pylint: disable=wrong-import-position
-from mqtt_monitor_v2.models import ContainerMetric, FilesystemMetric, HostMetrics, MonitorSnapshot  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.models import ContainerMetric, DiskMetric, FilesystemMetric, HostMetrics, MonitorSnapshot  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.system import (  # pylint: disable=wrong-import-position
     check_package_version,
     disk_cache,
@@ -239,6 +239,53 @@ class TestMqttMonitor:
         assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["name"] == "CPU Load"
         assert payloads["homeassistant/sensor/mqtt_monitor_root_disk_usage_percentage/config"]["name"] == "Root Usage"
         assert payloads["homeassistant/sensor/mqtt_monitor_container_web_status/config"]["name"] == "web"
+        assert payloads["homeassistant/binary_sensor/mqtt_monitor_container_web_running/config"]["device_class"] == "running"
+        assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["suggested_display_precision"] == 1
+
+    def test_setup_sensors_restores_metric_context_in_friendly_names(self, setup_monitor):
+        config, _ = setup_monitor
+        client = MagicMock()
+        snapshot = MonitorSnapshot(
+            generated_at="2026-04-12T12:00:00Z",
+            host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+            filesystems=[],
+            disks=[
+                DiskMetric(
+                    path="/dev/sda",
+                    name="sda",
+                    capacity_gib=1024,
+                    capacity_bytes="1099511627776",
+                    availability="online",
+                    smart_health_status="PASSED",
+                    max_temperature=40,
+                    power_on_hours=200,
+                    reallocated_sectors=0,
+                    spin_up_count=1,
+                    read_kilobytes_per_second=1.0,
+                    write_kilobytes_per_second=2.0,
+                    read_count_per_second=3.0,
+                    write_count_per_second=4.0,
+                    busy_time_percentage=5.0,
+                    command_line_parse_error=False,
+                    device_open_failed=False,
+                    smart_command_failed=False,
+                    disk_failing=False,
+                    prefail_attributes_threshold=False,
+                    past_attributes_threshold=False,
+                    device_error_log_errors=False,
+                    self_test_log_errors=False,
+                )
+            ],
+            raids=[],
+            containers=[],
+        )
+        setup_sensors(config, client, snapshot=snapshot)
+        payloads = {call.args[0]: json.loads(call.args[1]) for call in client.publish.call_args_list}
+
+        assert payloads["homeassistant/sensor/disk_sda_smart_health_status/config"]["name"] == "sda SMART Health"
+        assert payloads["homeassistant/sensor/disk_sda_max_temperature/config"]["name"] == "sda Max Temp"
+        assert payloads["homeassistant/sensor/disk_sda_busy_time_percentage/config"]["name"] == "sda I/O Busy"
+        assert payloads["homeassistant/sensor/disk_sda_busy_time_percentage/config"]["suggested_display_precision"] == 1
 
     def test_monitor_device_name_does_not_duplicate_monitor_suffix(self, setup_monitor):
         config, _ = setup_monitor

@@ -193,11 +193,14 @@ def test_build_dashboard_yaml_includes_v2_sections(tmp_path):
     assert "type: sections" in dashboard_yaml
     assert "sensor.server_active_issue_count" in dashboard_yaml
     assert "sensor.server_root_disk_usage_percentage" in dashboard_yaml
-    assert "sensor.server_container_web_status" in dashboard_yaml
+    assert "binary_sensor.server_container_web_running" in dashboard_yaml
     assert "sensor.disk_sda_capacity_gib" in dashboard_yaml
     assert "heading: Expected Services" in dashboard_yaml
     assert "heading: Disk Heat" in dashboard_yaml
     assert "heading: Physical Disk Detail" in dashboard_yaml
+    assert "name: SMART Health" in dashboard_yaml
+    assert "name: Max Temp" in dashboard_yaml
+    assert "name: I/O Busy" in dashboard_yaml
 
 
 def test_dashboard_entity_prefix_is_sanitized(tmp_path):
@@ -463,8 +466,8 @@ def test_build_dashboard_yaml_sanitizes_container_names(tmp_path):
 
     dashboard_yaml = build_dashboard_yaml(config, snapshot)
 
-    assert "sensor.server_container_acceleration_nextcloud_status" in dashboard_yaml
-    assert "sensor.server_container_acceleration-nextcloud_status" not in dashboard_yaml
+    assert "binary_sensor.server_container_acceleration_nextcloud_running" in dashboard_yaml
+    assert "binary_sensor.server_container_acceleration-nextcloud_running" not in dashboard_yaml
 
 
 def test_discover_lxc_containers_uses_privileged_helper_when_available(tmp_path):

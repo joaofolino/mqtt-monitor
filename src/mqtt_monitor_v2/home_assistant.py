@@ -62,24 +62,42 @@ def gauge_card(entity: str, name: str, icon: str, *, unit: str = "%", maximum: f
     }
 
 
-def tile_card(entity: str, name: str, icon: str) -> dict:
+def tile_card(
+    entity: str,
+    name: str,
+    icon: str,
+    *,
+    color: str | None = None,
+    hide_state: bool | None = None,
+    state_content: str | list[str] | None = None,
+) -> dict:
     """Return a compact tile card definition."""
-    return {
+    card = {
         "type": "tile",
         "entity": entity,
         "name": name,
         "icon": icon,
     }
+    if color is not None:
+        card["color"] = color
+    if hide_state is not None:
+        card["hide_state"] = hide_state
+    if state_content is not None:
+        card["state_content"] = state_content
+    return card
 
 
-def entities_card(title: str, entities: list[str]) -> dict:
+def entities_card(title: str, entities: list[str] | list[dict], *, state_color: bool = False) -> dict:
     """Return a Home Assistant entities card."""
-    return {
+    card = {
         "type": "entities",
         "title": title,
         "show_header_toggle": False,
         "entities": entities,
     }
+    if state_color:
+        card["state_color"] = True
+    return card
 
 
 def chunked(values: list, size: int) -> list[list]:
@@ -102,19 +120,19 @@ def is_logical_disk(disk) -> bool:
 
 def disk_entities(disk, include_io: bool) -> list[dict]:
     """Return the relevant entity ids for a disk card."""
-    entities = [named_entity(f"sensor.disk_{disk.slug}_capacity_gib", "Capacity")]
+    entities = [named_entity(f"sensor.disk_{disk.slug}_capacity_gib", "Capacity (GiB)")]
     if disk.smart_health_status is not None:
-        entities.append(named_entity(f"sensor.disk_{disk.slug}_smart_health_status", "Health"))
+        entities.append(named_entity(f"sensor.disk_{disk.slug}_smart_health_status", "SMART Health"))
     if disk.max_temperature is not None:
-        entities.append(named_entity(f"sensor.disk_{disk.slug}_max_temperature", "Temp"))
+        entities.append(named_entity(f"sensor.disk_{disk.slug}_max_temperature", "Max Temp"))
     if disk.power_on_hours is not None:
-        entities.append(named_entity(f"sensor.disk_{disk.slug}_power_on_hours", "Hours"))
+        entities.append(named_entity(f"sensor.disk_{disk.slug}_power_on_hours", "Power-On Hours"))
     if include_io:
         entities.extend(
             [
-                named_entity(f"sensor.disk_{disk.slug}_read_kilobytes_per_second", "Read"),
-                named_entity(f"sensor.disk_{disk.slug}_write_kilobytes_per_second", "Write"),
-                named_entity(f"sensor.disk_{disk.slug}_busy_time_percentage", "Busy"),
+                named_entity(f"sensor.disk_{disk.slug}_read_kilobytes_per_second", "I/O Read"),
+                named_entity(f"sensor.disk_{disk.slug}_write_kilobytes_per_second", "I/O Write"),
+                named_entity(f"sensor.disk_{disk.slug}_busy_time_percentage", "I/O Busy"),
             ]
         )
     return entities
@@ -182,9 +200,11 @@ def container_tile_card(prefix: str, container) -> dict:
     if container.status == "UNKNOWN":
         icon = "mdi:package-variant-closed-alert"
     return tile_card(
-        f"sensor.{prefix}_container_{container.slug}_status",
+        f"binary_sensor.{prefix}_container_{container.slug}_running",
         container.name,
         icon,
+        color="state",
+        state_content="state",
     )
 
 
@@ -219,17 +239,17 @@ def metric_label(metric_name: str) -> str:
         "cpu_load_percentage": "CPU Load",
         "memory_used_megabytes": "Memory Used",
         "cpu_temperature_celsius": "CPU Temp",
-        "max_temperature": "Temp",
-        "power_on_hours": "Hours",
+        "max_temperature": "Max Temp",
+        "power_on_hours": "Power-On Hours",
         "reallocated_sectors": "Reallocated",
         "spin_up_count": "Spin Ups",
-        "smart_health_status": "Health",
+        "smart_health_status": "SMART Health",
         "capacity_gib": "Capacity",
-        "read_kilobytes_per_second": "Read",
-        "write_kilobytes_per_second": "Write",
-        "read_count_per_second": "Read Ops",
-        "write_count_per_second": "Write Ops",
-        "busy_time_percentage": "Busy",
+        "read_kilobytes_per_second": "I/O Read",
+        "write_kilobytes_per_second": "I/O Write",
+        "read_count_per_second": "I/O Read Ops",
+        "write_count_per_second": "I/O Write Ops",
+        "busy_time_percentage": "I/O Busy",
         "command_line_parse_error": "Parse Error",
         "device_open_failed": "Open Failed",
         "smart_command_failed": "SMART Command Failed",
@@ -240,6 +260,32 @@ def metric_label(metric_name: str) -> str:
         "self_test_log_errors": "Self Test Errors",
     }
     return labels.get(metric_name, metric_name.replace("_", " ").title())
+
+
+def sensor_precision(metric_name: str) -> int | None:
+    """Return the desired Home Assistant display precision for a numeric metric."""
+    zero_decimal_metrics = {
+        "memory_used_megabytes",
+        "max_temperature",
+        "power_on_hours",
+        "reallocated_sectors",
+        "spin_up_count",
+        "capacity_gib",
+    }
+    one_decimal_metrics = {
+        "cpu_load_percentage",
+        "cpu_temperature_celsius",
+        "read_kilobytes_per_second",
+        "write_kilobytes_per_second",
+        "read_count_per_second",
+        "write_count_per_second",
+        "busy_time_percentage",
+    }
+    if metric_name in zero_decimal_metrics:
+        return 0
+    if metric_name in one_decimal_metrics:
+        return 1
+    return None
 
 
 def build_dashboard_view(config, snapshot) -> dict:
@@ -397,6 +443,7 @@ def build_dashboard_view(config, snapshot) -> dict:
                     )
                     for filesystem in maintenance_filesystems
                 ],
+                state_color=True,
             )
         )
 
@@ -420,11 +467,12 @@ def build_dashboard_view(config, snapshot) -> dict:
                 "Legacy Or Optional Containers",
                 [
                     named_entity(
-                        f"sensor.{prefix}_container_{container.slug}_status",
+                        f"binary_sensor.{prefix}_container_{container.slug}_running",
                         container.name,
                     )
                     for container in other_containers
                 ],
+                state_color=True,
             )
         )
     else:
@@ -561,19 +609,18 @@ def setup_sensors(config, client, snapshot=None, issues=None):
     ]
     for suffix, unit, title in host_sensors:
         object_id = f"{prefix}_{suffix}"
-        publish_discovery(
-            client,
-            "sensor",
-            object_id,
-            {
-                "name": title,
-                "object_id": object_id,
-                "unique_id": f"{prefix}_monitor_{suffix}",
-                "device": device,
-                "state_topic": f"{config.topic_prefix}/host/{suffix}",
-                "unit_of_measurement": unit,
-            },
-        )
+        payload = {
+            "name": title,
+            "object_id": object_id,
+            "unique_id": f"{prefix}_monitor_{suffix}",
+            "device": device,
+            "state_topic": f"{config.topic_prefix}/host/{suffix}",
+            "unit_of_measurement": unit,
+        }
+        precision = sensor_precision(suffix)
+        if precision is not None:
+            payload["suggested_display_precision"] = precision
+        publish_discovery(client, "sensor", object_id, payload)
 
     mounts = snapshot.filesystems if snapshot else []
     if not mounts:
@@ -602,6 +649,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 "state_topic": f"{config.topic_prefix}/host/{mount.slug}_disk_usage_percentage",
                 "unit_of_measurement": "%",
                 "json_attributes_topic": f"{config.topic_prefix}/host/{mount.slug}_disk_usage_attributes",
+                "suggested_display_precision": 0,
             },
         )
 
@@ -665,6 +713,9 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             }
             if unit is not None:
                 payload["unit_of_measurement"] = unit
+            precision = sensor_precision(metric_name)
+            if precision is not None:
+                payload["suggested_display_precision"] = precision
             if metric_name == "smart_health_status":
                 payload["json_attributes_topic"] = f"{config.topic_prefix}/disk/{disk_name}/attributes"
             publish_discovery(client, "sensor", f"disk_{disk_slug}_{metric_name}", payload)
@@ -719,16 +770,17 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             client,
             "binary_sensor",
             f"{prefix}_container_{container.slug}_running",
-            {
-                "name": f"{container.name} Running",
-                "object_id": f"{prefix}_container_{container.slug}_running",
-                "unique_id": f"{prefix}_monitor_container_{container.slug}_running",
-                "device": device,
-                "state_topic": f"{config.topic_prefix}/container/{container.name}/running",
-                "payload_on": "true",
-                "payload_off": "false",
-                "json_attributes_topic": f"{config.topic_prefix}/container/{container.name}/attributes",
-            },
+                {
+                    "name": f"{container.name} Running",
+                    "object_id": f"{prefix}_container_{container.slug}_running",
+                    "unique_id": f"{prefix}_monitor_container_{container.slug}_running",
+                    "device": device,
+                    "device_class": "running",
+                    "state_topic": f"{config.topic_prefix}/container/{container.name}/running",
+                    "payload_on": "true",
+                    "payload_off": "false",
+                    "json_attributes_topic": f"{config.topic_prefix}/container/{container.name}/attributes",
+                },
         )
         publish_discovery(
             client,
