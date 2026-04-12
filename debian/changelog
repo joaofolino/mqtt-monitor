@@ -1,3 +1,12 @@
+mqtt-monitor (1.1.0-0rc18) unstable; urgency=medium
+
+  * Stop treating DS3512 multipath transport paths as SMART-capable disks in the monitor and Home Assistant discovery.
+  * Ignore benign SMART command failures for healthy NVMe self-test logs and DS3512 defect-list reads.
+  * Use device-reported temperature thresholds when evaluating disk heat warnings instead of fixed global cutoffs.
+  * Reword historical temperature threshold events as dedicated warnings instead of generic SMART warnings.
+
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 21:20:00 +0200
+
 mqtt-monitor (1.1.0-0rc17) unstable; urgency=medium
 
   * Label the 10-minute sparkline sections in the generated Home Assistant dashboard so each chart group states its time window.

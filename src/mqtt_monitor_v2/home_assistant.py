@@ -137,7 +137,12 @@ def named_entity(entity: str, name: str) -> dict:
 
 def is_logical_disk(disk) -> bool:
     """Return whether a disk represents a logical array or mapper-backed volume."""
-    return disk.path.startswith("/dev/md") or disk.path.startswith("/dev/mapper/")
+    return getattr(disk, "device_kind", "physical") == "logical" or disk.path.startswith("/dev/md") or disk.path.startswith("/dev/mapper/")
+
+
+def is_path_disk(disk) -> bool:
+    """Return whether a disk is really a transport path to a logical array."""
+    return getattr(disk, "device_kind", "physical") == "path"
 
 
 def disk_entities(disk, include_io: bool) -> list[dict]:
@@ -192,7 +197,11 @@ def split_filesystems(filesystems) -> tuple[list, list]:
 
 def hottest_disk(snapshot):
     """Return the hottest physical disk with a temperature reading."""
-    candidates = [disk for disk in snapshot.disks if not is_logical_disk(disk) and disk.max_temperature is not None]
+    candidates = [
+        disk
+        for disk in snapshot.disks
+        if not is_path_disk(disk) and not is_logical_disk(disk) and disk.max_temperature is not None
+    ]
     if not candidates:
         return None
     return max(candidates, key=lambda disk: (disk.max_temperature, disk.name))
@@ -483,6 +492,7 @@ def sensor_precision(metric_name: str) -> int | None:
 def build_dashboard_view(config, snapshot) -> dict:
     """Build the main Home Assistant dashboard view."""
     prefix = entity_prefix(config)
+    dashboard_disks = [disk for disk in snapshot.disks if not is_path_disk(disk)]
     root_filesystem = next((filesystem for filesystem in snapshot.filesystems if filesystem.mount_point == "/"), None)
     hottest = hottest_disk(snapshot)
     primary_filesystems, maintenance_filesystems = split_filesystems(snapshot.filesystems)
@@ -491,11 +501,11 @@ def build_dashboard_view(config, snapshot) -> dict:
     expected_containers = [container for container in sorted_containers if container.name in expected_names]
     other_containers = [container for container in sorted_containers if container.name not in expected_names]
     temperature_disks = sorted(
-        [disk for disk in snapshot.disks if not is_logical_disk(disk) and disk.max_temperature is not None],
+        [disk for disk in dashboard_disks if not is_logical_disk(disk) and disk.max_temperature is not None],
         key=lambda disk: (-disk.max_temperature, disk.name),
     )
     activity_disks = sorted(
-        snapshot.disks,
+        dashboard_disks,
         key=lambda disk: (-disk_activity_score(disk), -disk.busy_time_percentage, disk.name),
     )
     sparkline_filesystems = primary_filesystems[:4]
@@ -820,8 +830,8 @@ def build_dashboard_view(config, snapshot) -> dict:
     ]
     sections.extend(detail_cards)
 
-    logical_disks = [disk for disk in snapshot.disks if is_logical_disk(disk)]
-    physical_disks = [disk for disk in snapshot.disks if not is_logical_disk(disk)]
+    logical_disks = [disk for disk in dashboard_disks if is_logical_disk(disk)]
+    physical_disks = [disk for disk in dashboard_disks if not is_logical_disk(disk)]
     for index, group in enumerate(chunked(physical_disks, 2)):
         sections.append(
             {
@@ -907,6 +917,11 @@ def publish_json(client, topic: str, payload: dict | list, retain: bool = True):
 def publish_discovery(client, component: str, object_id: str, payload: dict):
     """Publish a Home Assistant MQTT discovery payload."""
     client.publish(f"homeassistant/{component}/{object_id}/config", json.dumps(payload), retain=True)
+
+
+def remove_discovery(client, component: str, object_id: str):
+    """Remove a Home Assistant MQTT discovery payload."""
+    client.publish(f"homeassistant/{component}/{object_id}/config", "", retain=True)
 
 
 def setup_sensors(config, client, snapshot=None, issues=None):
@@ -997,17 +1012,55 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         },
     )
 
-    disk_names = [disk.name for disk in snapshot.disks] if snapshot else [device_path.split("/")[-1] for device_path in config.devices]
-    for disk_name in disk_names:
+    disk_items = snapshot.disks if snapshot else [
+        type(
+            "DiskProxy",
+            (),
+            {
+                "name": device_path.split("/")[-1],
+                "slug": disk_entity_slug(device_path.split("/")[-1]),
+                "device_kind": "physical",
+            },
+        )
+        for device_path in config.devices
+    ]
+    all_sensor_metrics = {
+        "max_temperature": "C",
+        "power_on_hours": "h",
+        "reallocated_sectors": None,
+        "spin_up_count": None,
+        "smart_health_status": None,
+        "capacity_gib": "GiB",
+        "read_kilobytes_per_second": "KB/s",
+        "write_kilobytes_per_second": "KB/s",
+        "read_count_per_second": "ops/s",
+        "write_count_per_second": "ops/s",
+        "busy_time_percentage": "%",
+    }
+    all_flag_metrics = [
+        "command_line_parse_error",
+        "device_open_failed",
+        "smart_command_failed",
+        "disk_failing",
+        "prefail_attributes_threshold",
+        "past_attributes_threshold",
+        "device_error_log_errors",
+        "self_test_log_errors",
+    ]
+    for disk in disk_items:
+        disk_name = disk.name
         disk_slug = disk_entity_slug(disk_name)
         metric_specs = [
-            ("max_temperature", "C"),
-            ("power_on_hours", "h"),
-            ("reallocated_sectors", None),
-            ("spin_up_count", None),
-            ("smart_health_status", None),
             ("capacity_gib", "GiB"),
         ]
+        if getattr(disk, "device_kind", "physical") == "physical":
+            metric_specs.extend([
+                ("max_temperature", "C"),
+                ("power_on_hours", "h"),
+                ("reallocated_sectors", None),
+                ("spin_up_count", None),
+                ("smart_health_status", None),
+            ])
         if config.enable_io_mqtt:
             metric_specs.extend([
                 ("read_kilobytes_per_second", "KB/s"),
@@ -1039,16 +1092,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 payload["json_attributes_topic"] = f"{config.topic_prefix}/disk/{disk_name}/attributes"
             publish_discovery(client, "sensor", f"disk_{disk_slug}_{metric_name}", payload)
 
-        for flag in [
-            "command_line_parse_error",
-            "device_open_failed",
-            "smart_command_failed",
-            "disk_failing",
-            "prefail_attributes_threshold",
-            "past_attributes_threshold",
-            "device_error_log_errors",
-            "self_test_log_errors",
-        ]:
+        for unsupported_metric in sorted(set(all_sensor_metrics) - {name for name, _ in metric_specs}):
+            remove_discovery(client, "sensor", f"disk_{disk_slug}_{unsupported_metric}")
+
+        supported_flags = all_flag_metrics if getattr(disk, "device_kind", "physical") == "physical" else []
+        for flag in supported_flags:
             publish_discovery(
                 client,
                 "binary_sensor",
@@ -1066,6 +1114,8 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                     "payload_not_available": "offline",
                 },
             )
+        for flag in sorted(set(all_flag_metrics) - set(supported_flags)):
+            remove_discovery(client, "binary_sensor", f"disk_{disk_slug}_{flag}")
 
     raid_items = snapshot.raids if snapshot else [type("RaidProxy", (), {"name": raid_name, "slug": safe_slug(raid_name)}) for raid_name in config.raid_arrays]
     for raid in raid_items:
@@ -1181,6 +1231,10 @@ def publish_snapshot(config, logger, client, snapshot, issues):
                 "capacity_gib": disk.capacity_gib,
                 "capacity_bytes": disk.capacity_bytes,
                 "power_on_hours": disk.power_on_hours,
+                "device_kind": disk.device_kind,
+                "temperature_warning_threshold": disk.temperature_warning_threshold,
+                "temperature_critical_threshold": disk.temperature_critical_threshold,
+                "historical_temperature_limit_exceeded": disk.historical_temperature_limit_exceeded,
                 "generated_at": snapshot.generated_at,
                 "path": disk.path,
             },

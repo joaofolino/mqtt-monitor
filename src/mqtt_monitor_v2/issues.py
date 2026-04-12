@@ -123,6 +123,17 @@ def evaluate_snapshot_issues(config: Config, snapshot: MonitorSnapshot, state: M
         )
 
     for disk in snapshot.disks:
+        warning_temperature_threshold = disk.temperature_warning_threshold
+        critical_temperature_threshold = disk.temperature_critical_threshold
+        if warning_temperature_threshold is None and critical_temperature_threshold is not None:
+            warning_temperature_threshold = max(critical_temperature_threshold - 5, 0)
+        if critical_temperature_threshold is None and warning_temperature_threshold is not None:
+            critical_temperature_threshold = warning_temperature_threshold + 5
+        if warning_temperature_threshold is None:
+            warning_temperature_threshold = 60
+        if critical_temperature_threshold is None:
+            critical_temperature_threshold = 70
+
         add_issue_if(
             candidates,
             disk.availability != "online",
@@ -147,7 +158,7 @@ def evaluate_snapshot_issues(config: Config, snapshot: MonitorSnapshot, state: M
         health_flags = []
         if disk.prefail_attributes_threshold:
             health_flags.append("prefail threshold exceeded")
-        if disk.past_attributes_threshold:
+        if disk.past_attributes_threshold and not disk.historical_temperature_limit_exceeded:
             health_flags.append("past threshold attribute")
         if disk.device_error_log_errors:
             health_flags.append("device error log errors")
@@ -155,6 +166,19 @@ def evaluate_snapshot_issues(config: Config, snapshot: MonitorSnapshot, state: M
             health_flags.append("self test errors")
         if disk.smart_command_failed:
             health_flags.append("SMART command failed")
+        add_issue_if(
+            candidates,
+            disk.historical_temperature_limit_exceeded,
+            key=f"disk/{disk.name}/historical_temperature_limit",
+            title=f"Disk {disk.name} historical over-temperature recorded",
+            description=(
+                f"Disk {disk.name} recorded a historical temperature threshold event in SMART history "
+                f"but is currently reporting SMART health {disk.smart_health_status or 'unknown'}"
+            ),
+            severity="warning",
+            resource_type="disk",
+            resource_name=disk.name,
+        )
         add_issue_if(
             candidates,
             bool(health_flags),
@@ -168,20 +192,26 @@ def evaluate_snapshot_issues(config: Config, snapshot: MonitorSnapshot, state: M
 
         add_issue_if(
             candidates,
-            disk.max_temperature is not None and disk.max_temperature >= 70,
+            disk.max_temperature is not None and disk.max_temperature >= critical_temperature_threshold,
             key=f"disk/{disk.name}/temperature_critical",
             title=f"Disk {disk.name} temperature critical",
-            description=f"Disk {disk.name} reached {disk.max_temperature} C",
+            description=(
+                f"Disk {disk.name} reached {disk.max_temperature} C "
+                f"against a {critical_temperature_threshold} C critical threshold"
+            ),
             severity="critical",
             resource_type="disk",
             resource_name=disk.name,
         )
         add_issue_if(
             candidates,
-            disk.max_temperature is not None and 60 <= disk.max_temperature < 70,
+            disk.max_temperature is not None and warning_temperature_threshold <= disk.max_temperature < critical_temperature_threshold,
             key=f"disk/{disk.name}/temperature_warning",
             title=f"Disk {disk.name} temperature high",
-            description=f"Disk {disk.name} reached {disk.max_temperature} C",
+            description=(
+                f"Disk {disk.name} reached {disk.max_temperature} C "
+                f"against a {warning_temperature_threshold} C warning threshold"
+            ),
             severity="warning",
             resource_type="disk",
             resource_name=disk.name,

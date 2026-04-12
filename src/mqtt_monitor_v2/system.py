@@ -309,6 +309,9 @@ def parse_smart_output(config, logger, smart_output, device_path):
         "power_on_hours": None,
         "reallocated_sectors": None,
         "spin_up_count": None,
+        "temperature_warning_threshold": None,
+        "temperature_critical_threshold": None,
+        "historical_temperature_limit_exceeded": False,
     }
     if not smart_lines or not smart_health_status:
         log(config, logger, f"Invalid or empty SMART output for {device_path}: {smart_output[:100]}", "ERROR")
@@ -320,16 +323,31 @@ def parse_smart_output(config, logger, smart_output, device_path):
     power_on_hours = None
     reallocated_sectors = None
     spin_up_count = None
+    warning_threshold = None
+    critical_threshold = None
+    historical_temperature_limit_exceeded = False
     for line in smart_lines:
         parts = line.split()
         if "Temperature_Celsius" in line and len(parts) >= 10 and parts[9].isdigit():
             temperature_readings.append(int(parts[9]))
+            if any(flag in line for flag in ("In_the_past", "Past")):
+                historical_temperature_limit_exceeded = True
         elif line.startswith("Temperature Sensor 2:") and len(parts) > 3 and parts[3].isdigit():
+            temperature_readings.append(int(parts[3]))
+        elif line.startswith("Temperature Sensor") and len(parts) > 3 and parts[3].isdigit():
             temperature_readings.append(int(parts[3]))
         elif line.startswith("Temperature:") and len(parts) > 1 and parts[1].isdigit():
             temperature_readings.append(int(parts[1]))
         elif line.startswith("Current Drive Temperature:") and len(parts) > 3 and parts[3].isdigit():
             temperature_readings.append(int(parts[3]))
+        elif line.startswith("Current Temperature:") and len(parts) > 2 and parts[2].isdigit():
+            temperature_readings.append(int(parts[2]))
+        elif line.startswith("Warning  Comp. Temp. Threshold:") and parts and parts[-2].isdigit():
+            warning_threshold = int(parts[-2])
+        elif line.startswith("Critical Comp. Temp. Threshold:") and parts and parts[-2].isdigit():
+            critical_threshold = int(parts[-2])
+        elif "Specified Maximum Operating Temperature" in line and parts and parts[-1].isdigit():
+            critical_threshold = int(parts[-1])
         elif "Power_On_Hours" in line and len(parts) >= 10 and parts[9].isdigit():
             power_on_hours = int(parts[9])
         elif line.startswith("Power On Hours:") and len(parts) > 3 and parts[3].isdigit():
@@ -338,12 +356,20 @@ def parse_smart_output(config, logger, smart_output, device_path):
             reallocated_sectors = int(parts[9])
         elif "Spin_Up_Time" in line and len(parts) >= 10 and parts[9].isdigit():
             spin_up_count = int(parts[9])
+        elif "Time in Over-Temperature" in line and parts:
+            for part in reversed(parts):
+                if part.isdigit():
+                    historical_temperature_limit_exceeded = int(part) > 0
+                    break
 
     smart_attributes.update({
         "max_temperature": max(temperature_readings) if temperature_readings else None,
         "power_on_hours": power_on_hours,
         "reallocated_sectors": reallocated_sectors,
         "spin_up_count": spin_up_count,
+        "temperature_warning_threshold": warning_threshold,
+        "temperature_critical_threshold": critical_threshold,
+        "historical_temperature_limit_exceeded": historical_temperature_limit_exceeded,
     })
     if smart_health_status == "FAILED":
         send_alert(
@@ -355,10 +381,60 @@ def parse_smart_output(config, logger, smart_output, device_path):
     return smart_attributes
 
 
+def smart_command_failure_is_benign(device_path: str, smart_output: str, smart_attributes: dict, exit_flags: dict) -> bool:
+    """Return whether a smartctl command failure is expected for an otherwise healthy device."""
+    if not exit_flags.get("smart_command_failed"):
+        return False
+    if smart_attributes.get("smart_health_status") != "PASSED":
+        return False
+    if any(
+        exit_flags.get(flag)
+        for flag in (
+            "disk_failing",
+            "prefail_attributes_threshold",
+            "past_attributes_threshold",
+            "device_error_log_errors",
+            "self_test_log_errors",
+        )
+    ):
+        return False
+
+    output_lower = smart_output.lower()
+    if "read self-test log failed: invalid field in command" in output_lower and "nvme" in device_path:
+        return True
+    if "read defect list: asked for grown list but didn't get it" in output_lower:
+        return True
+    return False
+
+
+def device_kind_for_path(device_path: str) -> str:
+    """Return whether a device should be treated as physical, logical, or a multipath path."""
+    if is_logical_device_path(device_path):
+        return "logical"
+
+    block_name = os.path.basename(os.path.realpath(device_path))
+    holders_dir = os.path.join("/sys/block", block_name, "holders")
+    if not os.path.isdir(holders_dir):
+        return "physical"
+
+    for holder in os.listdir(holders_dir):
+        if not holder.startswith("dm-"):
+            continue
+        uuid_path = os.path.join(holders_dir, holder, "dm", "uuid")
+        try:
+            with open(uuid_path, "r", encoding="utf-8") as file_handle:
+                if file_handle.read().strip().lower().startswith("mpath-"):
+                    return "path"
+        except OSError:
+            continue
+    return "physical"
+
+
 def get_disk_info(config, logger, device_path, full=False):
     """Get disk information including capacity and SMART attributes."""
     device_name = device_path.split("/")[-1]
     cached_info = disk_cache.get(device_path, {})
+    device_kind = device_kind_for_path(device_path)
     if not os.path.exists(device_path):
         log(config, logger, f"Device {device_path} does not exist", "ERROR")
         return {
@@ -379,6 +455,10 @@ def get_disk_info(config, logger, device_path, full=False):
             "past_attributes_threshold": False,
             "device_error_log_errors": False,
             "self_test_log_errors": False,
+            "device_kind": device_kind,
+            "temperature_warning_threshold": None,
+            "temperature_critical_threshold": None,
+            "historical_temperature_limit_exceeded": False,
         }
 
     if device_path not in disk_cache or not (cached_info.get("capacity_bytes") or cached_info.get("capacity")):
@@ -411,9 +491,13 @@ def get_disk_info(config, logger, device_path, full=False):
             "past_attributes_threshold": cached_info.get("past_attributes_threshold", False),
             "device_error_log_errors": cached_info.get("device_error_log_errors", False),
             "self_test_log_errors": cached_info.get("self_test_log_errors", False),
+            "device_kind": cached_info.get("device_kind", device_kind),
+            "temperature_warning_threshold": cached_info.get("temperature_warning_threshold"),
+            "temperature_critical_threshold": cached_info.get("temperature_critical_threshold"),
+            "historical_temperature_limit_exceeded": cached_info.get("historical_temperature_limit_exceeded", False),
         }
 
-    if is_logical_device_path(device_path):
+    if device_kind in {"logical", "path"}:
         return {
             "name": device_name,
             "capacity": capacity,
@@ -432,6 +516,10 @@ def get_disk_info(config, logger, device_path, full=False):
             "past_attributes_threshold": False,
             "device_error_log_errors": False,
             "self_test_log_errors": False,
+            "device_kind": device_kind,
+            "temperature_warning_threshold": None,
+            "temperature_critical_threshold": None,
+            "historical_temperature_limit_exceeded": False,
         }
 
     device_types = ["nvme", "auto"] if "nvme" in device_path else ["sat", "scsi", "auto"]
@@ -446,8 +534,11 @@ def get_disk_info(config, logger, device_path, full=False):
             "name": device_name,
             "capacity": capacity,
             "capacity_bytes": raw_capacity,
+            "device_kind": device_kind,
         })
         exit_flags = parse_smartctl_exit_code(exit_code)
+        if smart_command_failure_is_benign(device_path, smart_output, disk_smart_info, exit_flags):
+            exit_flags["smart_command_failed"] = False
         disk_smart_info.update(exit_flags)
         if exit_flags["command_line_parse_error"] or exit_flags["device_open_failed"]:
             disk_smart_info["availability"] = "offline"
@@ -478,6 +569,10 @@ def get_disk_info(config, logger, device_path, full=False):
         "past_attributes_threshold": False,
         "device_error_log_errors": False,
         "self_test_log_errors": False,
+        "device_kind": device_kind,
+        "temperature_warning_threshold": None,
+        "temperature_critical_threshold": None,
+        "historical_temperature_limit_exceeded": False,
     }
 
 
@@ -860,6 +955,10 @@ def collect_snapshot(config, logger, state: MonitorState, current_time: float | 
                 past_attributes_threshold=disk_info.get("past_attributes_threshold", False),
                 device_error_log_errors=disk_info.get("device_error_log_errors", False),
                 self_test_log_errors=disk_info.get("self_test_log_errors", False),
+                device_kind=disk_info.get("device_kind", device_kind_for_path(device_path)),
+                temperature_warning_threshold=disk_info.get("temperature_warning_threshold"),
+                temperature_critical_threshold=disk_info.get("temperature_critical_threshold"),
+                historical_temperature_limit_exceeded=disk_info.get("historical_temperature_limit_exceeded", False),
             )
         )
 

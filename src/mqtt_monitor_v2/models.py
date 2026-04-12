@@ -118,6 +118,10 @@ class DiskMetric:
     past_attributes_threshold: bool
     device_error_log_errors: bool
     self_test_log_errors: bool
+    device_kind: str = "physical"
+    temperature_warning_threshold: int | None = None
+    temperature_critical_threshold: int | None = None
+    historical_temperature_limit_exceeded: bool = False
 
     @property
     def slug(self) -> str:

@@ -127,6 +127,29 @@ class TestMqttMonitor:
         assert result["smart_health_status"] == "PASSED"
         assert result["smart_command_failed"] is True
 
+    def test_get_disk_info_ignores_optional_nvme_self_test_log_failure(self, setup_monitor):
+        config, logger = setup_monitor
+        smart_output = "\n".join(
+            [
+                "SMART overall-health self-assessment test result: PASSED",
+                "Temperature: 45",
+                "Warning  Comp. Temp. Threshold:     75 Celsius",
+                "Critical Comp. Temp. Threshold:     80 Celsius",
+                "Read Self-test Log failed: Invalid Field in Command (0x002)",
+            ]
+        )
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
+            mock_run_cmd.side_effect = [
+                ("1099511627776", 0),
+                (smart_output, 1 << 2),
+            ]
+            result = get_disk_info(config, logger, "/dev/nvme0n1", full=True)
+        assert result["availability"] == "online"
+        assert result["smart_health_status"] == "PASSED"
+        assert result["smart_command_failed"] is False
+        assert result["temperature_warning_threshold"] == 75
+        assert result["temperature_critical_threshold"] == 80
+
     def test_get_disk_info_falls_back_to_scsi_when_sat_probe_fails(self, setup_monitor):
         config, logger = setup_monitor
         sat_error_output = "\n".join(
@@ -153,6 +176,21 @@ class TestMqttMonitor:
         assert result["smart_health_status"] == "PASSED"
         assert result["max_temperature"] == 28
         assert result["smart_command_failed"] is True
+
+    def test_get_disk_info_treats_multipath_component_as_path_device(self, setup_monitor):
+        config, logger = setup_monitor
+        with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch(
+            "mqtt_monitor_v2.system.device_kind_for_path",
+            return_value="path",
+        ), patch("mqtt_monitor_v2.system.run_cmd") as mock_run_cmd:
+            mock_run_cmd.side_effect = [
+                ("10995116277760", 0),
+            ]
+            result = get_disk_info(config, logger, "/dev/sda", full=True)
+        assert result["availability"] == "online"
+        assert result["device_kind"] == "path"
+        assert result["smart_health_status"] is None
+        assert result["smart_command_failed"] is False
 
     def test_get_disk_info_treats_mapper_device_as_logical_volume(self, setup_monitor):
         config, logger = setup_monitor
@@ -243,6 +281,49 @@ class TestMqttMonitor:
         assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["suggested_display_precision"] == 1
         assert payloads["homeassistant/sensor/mqtt_monitor_cpu_load_percentage/config"]["state_class"] == "measurement"
         assert payloads["homeassistant/sensor/mqtt_monitor_root_disk_usage_percentage/config"]["state_class"] == "measurement"
+
+    def test_setup_sensors_removes_unsupported_smart_entities_for_path_devices(self, setup_monitor):
+        config, _ = setup_monitor
+        client = MagicMock()
+        snapshot = MonitorSnapshot(
+            generated_at="2026-04-12T12:00:00Z",
+            host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+            filesystems=[],
+            disks=[
+                DiskMetric(
+                    path="/dev/sda",
+                    name="sda",
+                    capacity_gib=10240,
+                    capacity_bytes="10995116277760",
+                    availability="online",
+                    smart_health_status=None,
+                    max_temperature=None,
+                    power_on_hours=None,
+                    reallocated_sectors=None,
+                    spin_up_count=None,
+                    read_kilobytes_per_second=1.0,
+                    write_kilobytes_per_second=2.0,
+                    read_count_per_second=3.0,
+                    write_count_per_second=4.0,
+                    busy_time_percentage=5.0,
+                    command_line_parse_error=False,
+                    device_open_failed=False,
+                    smart_command_failed=False,
+                    disk_failing=False,
+                    prefail_attributes_threshold=False,
+                    past_attributes_threshold=False,
+                    device_error_log_errors=False,
+                    self_test_log_errors=False,
+                    device_kind="path",
+                )
+            ],
+            raids=[],
+            containers=[],
+        )
+        setup_sensors(config, client, snapshot=snapshot)
+        published = {(call.args[0], call.args[1]) for call in client.publish.call_args_list}
+        assert ("homeassistant/sensor/disk_sda_smart_health_status/config", "") in published
+        assert ("homeassistant/binary_sensor/disk_sda_smart_command_failed/config", "") in published
 
     def test_setup_sensors_restores_metric_context_in_friendly_names(self, setup_monitor):
         config, _ = setup_monitor
