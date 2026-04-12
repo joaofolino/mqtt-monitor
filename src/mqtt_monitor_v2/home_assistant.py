@@ -100,6 +100,15 @@ def tile_card(
     return card
 
 
+def conditional_card(conditions: list[dict], card: dict) -> dict:
+    """Return a conditional Lovelace card."""
+    return {
+        "type": "conditional",
+        "conditions": conditions,
+        "card": card,
+    }
+
+
 def entities_card(title: str, entities: list[str] | list[dict], *, state_color: bool = False) -> dict:
     """Return a Home Assistant entities card."""
     card = {
@@ -208,17 +217,34 @@ def container_sort_key(container, expected_names: set[str]) -> tuple:
 
 
 def container_tile_card(prefix: str, container) -> dict:
-    """Return a compact container status tile."""
-    icon = "mdi:package-variant-closed-check" if container.running else "mdi:package-variant-closed-remove"
-    if container.status == "UNKNOWN":
-        icon = "mdi:package-variant-closed-alert"
-    return tile_card(
-        f"binary_sensor.{prefix}_container_{container.slug}_running",
-        container.name,
-        icon,
-        color="state",
-        state_content="state",
-    )
+    """Return a color-aware expected-service tile stack."""
+    running_entity = f"binary_sensor.{prefix}_container_{container.slug}_running"
+    status_entity = f"sensor.{prefix}_container_{container.slug}_status"
+    return {
+        "type": "vertical-stack",
+        "cards": [
+            conditional_card(
+                [{"entity": running_entity, "state": "on"}],
+                tile_card(
+                    running_entity,
+                    container.name,
+                    "mdi:package-variant-closed-check",
+                    color="green",
+                    state_content="state",
+                ),
+            ),
+            conditional_card(
+                [{"entity": running_entity, "state": "off"}],
+                tile_card(
+                    status_entity,
+                    container.name,
+                    "mdi:package-variant-closed-remove",
+                    color="amber",
+                    state_content="state",
+                ),
+            ),
+        ],
+    }
 
 
 def disk_heat_card(disk) -> dict:
@@ -249,6 +275,27 @@ def disk_io_card(disk) -> dict:
             named_entity(f"sensor.disk_{disk.slug}_busy_time_percentage", "I/O Busy (%)"),
         ],
     )
+
+
+def disk_io_markdown_card(disks) -> dict:
+    """Return a dense markdown table for disk I/O overview."""
+    lines = [
+        "| Disk | Read KB/s | Write KB/s | Busy % |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for disk in disks:
+        lines.append(
+            "| {name} | {{{{ states('sensor.disk_{slug}_read_kilobytes_per_second') }}}} | "
+            "{{{{ states('sensor.disk_{slug}_write_kilobytes_per_second') }}}} | "
+            "{{{{ states('sensor.disk_{slug}_busy_time_percentage') }}}} |".format(
+                name=disk.name,
+                slug=disk.slug,
+            )
+        )
+    return {
+        "type": "markdown",
+        "content": "\n".join(lines),
+    }
 
 
 def metric_label(metric_name: str) -> str:
@@ -512,7 +559,8 @@ def build_dashboard_view(config, snapshot) -> dict:
 
     disk_activity_cards = [{"type": "heading", "heading": "Disk I/O", "icon": "mdi:pulse"}]
     if activity_disks:
-        disk_activity_cards.extend([disk_io_card(disk) for disk in activity_disks[:4]])
+        disk_activity_cards.append(disk_io_markdown_card(activity_disks))
+        disk_activity_cards.extend([disk_io_card(disk) for disk in activity_disks[:3]])
 
     sections = [
         {"cards": overview_cards},

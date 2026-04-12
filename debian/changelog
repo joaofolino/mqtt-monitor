@@ -1,4 +1,4 @@
-mqtt-monitor (1.1.0-0rc12) unstable; urgency=medium
+mqtt-monitor (1.1.0-0rc13) unstable; urgency=medium
 
   * Introduce the V2 runtime with inventory discovery for disks, RAID, mounts, and LXC.
   * Add a first-class issue engine with active and resolved transitions.
@@ -25,8 +25,10 @@ mqtt-monitor (1.1.0-0rc12) unstable; urgency=medium
   * Use running-state binary sensors in the dashboard so container tiles can show state-aware coloring.
   * Derive a host-friendly Home Assistant display name when self_name is generic, with an optional explicit override.
   * Replace the percentage-only disk activity overview with disk I/O cards that show read, write, and busy together.
+  * Render expected services with explicit green and amber state cards instead of neutral tiles.
+  * Add a dense disk I/O table so active disks are easier to scan at a glance.
 
- -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 19:20:00 +0200
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 19:35:00 +0200
 
 mqtt-monitor (1.0.1-2) unstable; urgency=medium
 
