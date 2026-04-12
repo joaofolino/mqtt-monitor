@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
+
+
+def safe_slug(value: str) -> str:
+    """Return a Home Assistant-safe slug."""
+    slug = re.sub(r"[^a-z0-9_]+", "_", value.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "item"
 
 
 @dataclass
@@ -80,7 +87,7 @@ class FilesystemMetric:
     @property
     def slug(self) -> str:
         """Return the normalized mount name used in MQTT/HA entities."""
-        return self.mount_point.strip("/").replace("/", "_") or "root"
+        return safe_slug(self.mount_point.strip("/").replace("/", "_") or "root")
 
 
 @dataclass
@@ -114,9 +121,7 @@ class DiskMetric:
     @property
     def slug(self) -> str:
         """Return a Home Assistant-safe disk identifier."""
-        slug = re.sub(r"[^a-z0-9_]+", "_", self.name.lower())
-        slug = re.sub(r"_+", "_", slug).strip("_")
-        return slug or "disk"
+        return safe_slug(self.name)
 
 
 @dataclass
@@ -127,6 +132,11 @@ class RaidMetric:
     status: str
     raw: str
     failed_devices: list[str] = field(default_factory=list)
+
+    @property
+    def slug(self) -> str:
+        """Return a Home Assistant-safe RAID identifier."""
+        return safe_slug(self.name)
 
 
 @dataclass
@@ -141,6 +151,11 @@ class ContainerMetric:
     def running(self) -> bool:
         """Return whether the container is running."""
         return self.status.upper() == "RUNNING"
+
+    @property
+    def slug(self) -> str:
+        """Return a Home Assistant-safe container identifier."""
+        return safe_slug(self.name)
 
 
 @dataclass
@@ -162,7 +177,7 @@ class Issue:
     @property
     def slug(self) -> str:
         """Return a stable MQTT/HA-safe slug for the issue."""
-        return self.key.replace("/", "_").replace(".", "_").replace("-", "_")
+        return safe_slug(self.key.replace("/", "_").replace(".", "_"))
 
 
 @dataclass

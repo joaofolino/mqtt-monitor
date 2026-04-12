@@ -8,8 +8,10 @@ import os
 import re
 
 import requests
+import yaml
 
 from .issues import active_issues, highest_active_severity, severity_value
+from .models import safe_slug
 
 
 def entity_prefix(config) -> str:
@@ -21,9 +23,246 @@ def entity_prefix(config) -> str:
 
 def disk_entity_slug(disk_name: str) -> str:
     """Return a Home Assistant-safe disk object identifier suffix."""
-    slug = re.sub(r"[^a-z0-9_]+", "_", disk_name.lower())
-    slug = re.sub(r"_+", "_", slug).strip("_")
-    return slug or "disk"
+    return safe_slug(disk_name)
+
+
+def compact_path_label(path: str) -> str:
+    """Return a shorter label for filesystem paths."""
+    if path == "/":
+        return "Root"
+    parts = [part for part in path.strip("/").split("/") if part]
+    if len(parts) <= 2:
+        return "/".join(parts)
+    return "/".join(parts[-2:])
+
+
+def gauge_card(entity: str, name: str, icon: str, *, unit: str = "%", maximum: float = 100, yellow: float = 70, red: float = 90) -> dict:
+    """Return a standard gauge card definition."""
+    return {
+        "type": "gauge",
+        "entity": entity,
+        "name": name,
+        "unit": unit,
+        "min": 0,
+        "max": maximum,
+        "severity": {
+            "green": 0,
+            "yellow": yellow,
+            "red": red,
+        },
+        "needle": True,
+        "icon": icon,
+    }
+
+
+def tile_card(entity: str, name: str, icon: str) -> dict:
+    """Return a compact tile card definition."""
+    return {
+        "type": "tile",
+        "entity": entity,
+        "name": name,
+        "icon": icon,
+    }
+
+
+def entities_card(title: str, entities: list[str]) -> dict:
+    """Return a Home Assistant entities card."""
+    return {
+        "type": "entities",
+        "title": title,
+        "show_header_toggle": False,
+        "entities": entities,
+    }
+
+
+def chunked(values: list, size: int) -> list[list]:
+    """Return values split into fixed-size chunks."""
+    return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def is_logical_disk(disk) -> bool:
+    """Return whether a disk represents a logical array or mapper-backed volume."""
+    return disk.path.startswith("/dev/md") or disk.path.startswith("/dev/mapper/")
+
+
+def disk_entities(disk, include_io: bool) -> list[str]:
+    """Return the relevant entity ids for a disk card."""
+    entities = [f"sensor.disk_{disk.slug}_capacity_gib"]
+    if disk.smart_health_status is not None:
+        entities.append(f"sensor.disk_{disk.slug}_smart_health_status")
+    if disk.max_temperature is not None:
+        entities.append(f"sensor.disk_{disk.slug}_max_temperature")
+    if disk.power_on_hours is not None:
+        entities.append(f"sensor.disk_{disk.slug}_power_on_hours")
+    if include_io:
+        entities.extend([
+            f"sensor.disk_{disk.slug}_read_kilobytes_per_second",
+            f"sensor.disk_{disk.slug}_write_kilobytes_per_second",
+            f"sensor.disk_{disk.slug}_busy_time_percentage",
+        ])
+    return entities
+
+
+def build_dashboard_view(config, snapshot) -> dict:
+    """Build the main Home Assistant dashboard view."""
+    prefix = entity_prefix(config)
+
+    overview_cards = [
+        {"type": "heading", "heading": "Overview", "icon": "mdi:server-network"},
+        {
+            "type": "grid",
+            "columns": 2,
+            "square": False,
+            "cards": [
+                tile_card(f"sensor.{prefix}_active_issue_count", "Active Issues", "mdi:alert"),
+                tile_card(f"sensor.{prefix}_highest_issue_severity", "Highest Severity", "mdi:alert-circle-outline"),
+                gauge_card(
+                    f"sensor.{prefix}_cpu_load_percentage",
+                    "CPU Load",
+                    "mdi:cpu-64-bit",
+                    maximum=100,
+                    yellow=50,
+                    red=80,
+                ),
+                gauge_card(
+                    f"sensor.{prefix}_cpu_temperature_celsius",
+                    "CPU Temp",
+                    "mdi:thermometer",
+                    unit="C",
+                    maximum=100,
+                    yellow=60,
+                    red=80,
+                ),
+                tile_card(f"sensor.{prefix}_memory_used_megabytes", "Memory Used", "mdi:memory"),
+            ],
+        },
+        {
+            "type": "markdown",
+            "title": "Active Issues",
+            "content": "\n".join([
+                f"{{% set generated = state_attr('sensor.{prefix}_active_issue_count', 'generated_at') %}}",
+                f"{{% set issues = state_attr('sensor.{prefix}_active_issue_count', 'active_issues') or [] %}}",
+                "{% if issues | count == 0 %}",
+                "All monitored resources are reporting normally.",
+                "{% else %}",
+                "{% for issue in issues %}",
+                "- **{{ issue.title }}** ({{ issue.severity }})",
+                "  {{ issue.description }}",
+                "{% endfor %}",
+                "{% endif %}",
+                "{% if generated %}",
+                "",
+                "_Last update: {{ generated }}_",
+                "{% endif %}",
+            ]),
+        },
+    ]
+
+    storage_cards = [{"type": "heading", "heading": "Storage", "icon": "mdi:harddisk"}]
+    if snapshot.filesystems:
+        storage_cards.append(
+            {
+                "type": "grid",
+                "columns": 2,
+                "square": False,
+                "cards": [
+                    gauge_card(
+                        f"sensor.{prefix}_{filesystem.slug}_disk_usage_percentage",
+                        compact_path_label(filesystem.mount_point),
+                        "mdi:harddisk",
+                        maximum=100,
+                        yellow=75,
+                        red=90,
+                    )
+                    for filesystem in snapshot.filesystems
+                ],
+            }
+        )
+    if snapshot.raids:
+        storage_cards.append(
+            {
+                "type": "grid",
+                "columns": 2,
+                "square": False,
+                "cards": [
+                    tile_card(
+                        f"sensor.raid_{raid.slug}_status",
+                        f"RAID {raid.name}",
+                        "mdi:harddisk-plus",
+                    )
+                    for raid in snapshot.raids
+                ],
+            }
+        )
+    container_cards = [{"type": "heading", "heading": "Containers", "icon": "mdi:package-variant-closed"}]
+    if snapshot.containers:
+        container_cards.append(
+            entities_card(
+                "LXC Runtime",
+                [f"sensor.{prefix}_container_{container.slug}_status" for container in snapshot.containers],
+            )
+        )
+    else:
+        container_cards.append({"type": "markdown", "content": "No LXC containers discovered."})
+
+    sections = [
+        {"cards": overview_cards},
+        {"cards": storage_cards},
+        {"cards": container_cards},
+    ]
+
+    logical_disks = [disk for disk in snapshot.disks if is_logical_disk(disk)]
+    physical_disks = [disk for disk in snapshot.disks if not is_logical_disk(disk)]
+    for index, group in enumerate(chunked(physical_disks, 2)):
+        sections.append(
+            {
+                "cards": [
+                    {
+                        "type": "heading",
+                        "heading": "Physical Disks" if index == 0 else "Physical Disks (cont.)",
+                        "icon": "mdi:harddisk",
+                    },
+                    *[
+                        entities_card(f"Disk {disk.name}", disk_entities(disk, config.enable_io_mqtt))
+                        for disk in group
+                    ],
+                ]
+            }
+        )
+
+    for index, group in enumerate(chunked(logical_disks, 2)):
+        sections.append(
+            {
+                "cards": [
+                    {
+                        "type": "heading",
+                        "heading": "Logical Volumes" if index == 0 else "Logical Volumes (cont.)",
+                        "icon": "mdi:chart-sankey",
+                    },
+                    *[
+                        entities_card(f"Disk {disk.name}", disk_entities(disk, config.enable_io_mqtt))
+                        for disk in group
+                    ],
+                ]
+            }
+        )
+
+    return {
+        "title": "Server Monitor",
+        "path": "server-monitor",
+        "icon": "mdi:server-network",
+        "type": "sections",
+        "max_columns": 3,
+        "sections": sections,
+    }
+
+
+def build_dashboard_config(config, snapshot) -> dict:
+    """Build the full Home Assistant dashboard config."""
+    return {
+        "title": "Server Monitor",
+        "views": [build_dashboard_view(config, snapshot)],
+    }
 
 
 def monitor_device(config) -> dict:
@@ -88,7 +327,17 @@ def setup_sensors(config, client, snapshot=None, issues=None):
 
     mounts = snapshot.filesystems if snapshot else []
     if not mounts:
-        mounts = [type("FilesystemProxy", (), {"slug": mount.strip("/").replace("/", "_") or "root"}) for mount in config.disk_usage_mounts]
+        mounts = [
+            type(
+                "FilesystemProxy",
+                (),
+                {
+                    "slug": safe_slug(mount.strip("/").replace("/", "_") or "root"),
+                    "mount_point": mount,
+                },
+            )
+            for mount in config.disk_usage_mounts
+        ]
     for mount in mounts:
         object_id = f"{prefix}_{mount.slug}_disk_usage_percentage"
         publish_discovery(
@@ -96,7 +345,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             "sensor",
             object_id,
             {
-                "name": f"{config.self_name.title()} {mount.slug.replace('_', ' ').title()} Disk Usage Percentage",
+                "name": f"{config.self_name.title()} {compact_path_label(getattr(mount, 'mount_point', mount.slug)).title()} Disk Usage Percentage",
                 "object_id": object_id,
                 "unique_id": f"{prefix}_monitor_{mount.slug}_disk_usage_percentage",
                 "device": device,
@@ -198,19 +447,19 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 },
             )
 
-    raid_names = [raid.name for raid in snapshot.raids] if snapshot else list(config.raid_arrays)
-    for raid_name in raid_names:
+    raid_items = snapshot.raids if snapshot else [type("RaidProxy", (), {"name": raid_name, "slug": safe_slug(raid_name)}) for raid_name in config.raid_arrays]
+    for raid in raid_items:
         publish_discovery(
             client,
             "sensor",
-            f"raid_{raid_name}_status",
+            f"raid_{raid.slug}_status",
             {
-                "name": f"RAID {raid_name} Status",
-                "object_id": f"raid_{raid_name}_status",
-                "unique_id": f"{prefix}_monitor_raid_{raid_name}_status",
+                "name": f"RAID {raid.name} Status",
+                "object_id": f"raid_{raid.slug}_status",
+                "unique_id": f"{prefix}_monitor_raid_{raid.slug}_status",
                 "device": device,
-                "state_topic": f"{config.topic_prefix}/raid/{raid_name}/status",
-                "json_attributes_topic": f"{config.topic_prefix}/raid/{raid_name}/attributes",
+                "state_topic": f"{config.topic_prefix}/raid/{raid.name}/status",
+                "json_attributes_topic": f"{config.topic_prefix}/raid/{raid.name}/attributes",
             },
         )
 
@@ -219,11 +468,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         publish_discovery(
             client,
             "binary_sensor",
-            f"{prefix}_container_{container.name}_running",
+            f"{prefix}_container_{container.slug}_running",
             {
                 "name": f"Container {container.name} Running",
-                "object_id": f"{prefix}_container_{container.name}_running",
-                "unique_id": f"{prefix}_monitor_container_{container.name}_running",
+                "object_id": f"{prefix}_container_{container.slug}_running",
+                "unique_id": f"{prefix}_monitor_container_{container.slug}_running",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/container/{container.name}/running",
                 "payload_on": "true",
@@ -234,11 +483,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         publish_discovery(
             client,
             "sensor",
-            f"{prefix}_container_{container.name}_status",
+            f"{prefix}_container_{container.slug}_status",
             {
                 "name": f"Container {container.name} Status",
-                "object_id": f"{prefix}_container_{container.name}_status",
-                "unique_id": f"{prefix}_monitor_container_{container.name}_status",
+                "object_id": f"{prefix}_container_{container.slug}_status",
+                "unique_id": f"{prefix}_monitor_container_{container.slug}_status",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/container/{container.name}/status",
             },
@@ -461,88 +710,7 @@ def publish_snapshot(config, logger, client, snapshot, issues):
 
 def build_dashboard_yaml(config, snapshot) -> str:
     """Build a Home Assistant dashboard YAML document."""
-    prefix = entity_prefix(config)
-    lines = [
-        "title: MQTT Monitor",
-        "views:",
-        "  - title: Server Monitor",
-        "    path: mqtt-monitor",
-        "    icon: mdi:server",
-        "    cards:",
-        "      - type: entities",
-        "        title: Host Overview",
-        "        show_header_toggle: false",
-        "        entities:",
-        f"          - sensor.{prefix}_cpu_load_percentage",
-        f"          - sensor.{prefix}_memory_used_megabytes",
-        f"          - sensor.{prefix}_cpu_temperature_celsius",
-        f"          - sensor.{prefix}_active_issue_count",
-        f"          - sensor.{prefix}_highest_issue_severity",
-        "      - type: markdown",
-        "        title: Active Issues",
-        "        content: |",
-        f"          {{% set issues = state_attr('sensor.{prefix}_active_issue_count', 'active_issues') or [] %}}",
-        "          {% if issues | count == 0 %}",
-        "          No active issues.",
-        "          {% else %}",
-        "          {% for issue in issues %}",
-        "          - **{{ issue.title }}** ({{ issue.severity }}): {{ issue.description }}",
-        "          {% endfor %}",
-        "          {% endif %}",
-    ]
-
-    if snapshot.filesystems:
-        lines.extend([
-            "      - type: entities",
-            "        title: Filesystems",
-            "        show_header_toggle: false",
-            "        entities:",
-        ])
-        lines.extend([f"          - sensor.{prefix}_{filesystem.slug}_disk_usage_percentage" for filesystem in snapshot.filesystems])
-
-    if snapshot.raids:
-        lines.extend([
-            "      - type: entities",
-            "        title: RAID Arrays",
-            "        show_header_toggle: false",
-            "        entities:",
-        ])
-        lines.extend([f"          - sensor.raid_{raid.name}_status" for raid in snapshot.raids])
-
-    if snapshot.containers:
-        lines.extend([
-            "      - type: entities",
-            "        title: LXC Containers",
-            "        show_header_toggle: false",
-            "        entities:",
-        ])
-        lines.extend([
-            f"          - binary_sensor.{prefix}_container_{container.name}_running"
-            for container in snapshot.containers
-        ])
-
-    for disk in snapshot.disks:
-        lines.extend([
-            "      - type: entities",
-            f"        title: Disk {disk.name}",
-            "        show_header_toggle: false",
-            "        entities:",
-            f"          - sensor.disk_{disk.slug}_capacity_gib",
-        ])
-        if disk.smart_health_status is not None:
-            lines.append(f"          - sensor.disk_{disk.slug}_smart_health_status")
-        if disk.max_temperature is not None:
-            lines.append(f"          - sensor.disk_{disk.slug}_max_temperature")
-        if disk.power_on_hours is not None:
-            lines.append(f"          - sensor.disk_{disk.slug}_power_on_hours")
-        if config.enable_io_mqtt:
-            lines.extend([
-                f"          - sensor.disk_{disk.slug}_read_kilobytes_per_second",
-                f"          - sensor.disk_{disk.slug}_write_kilobytes_per_second",
-                f"          - sensor.disk_{disk.slug}_busy_time_percentage",
-            ])
-
-    return "\n".join(lines) + "\n"
+    return yaml.safe_dump(build_dashboard_config(config, snapshot), sort_keys=False, allow_unicode=True)
 
 
 def write_dashboard_file(config, snapshot, state):

@@ -1,4 +1,4 @@
-mqtt-monitor (1.1.0-0rc6) unstable; urgency=medium
+mqtt-monitor (1.1.0-0rc7) unstable; urgency=medium
 
   * Introduce the V2 runtime with inventory discovery for disks, RAID, mounts, and LXC.
   * Add a first-class issue engine with active and resolved transitions.
@@ -10,8 +10,12 @@ mqtt-monitor (1.1.0-0rc6) unstable; urgency=medium
   * Include mapper-backed monitored mounts in disk discovery and expose logical multipath volumes.
   * Sanitize disk entity IDs so names such as mpatha-part1 produce valid Home Assistant entities.
   * Hide unsupported SMART-only rows from generated dashboard cards for logical volumes.
+  * Redesign the generated Home Assistant dashboard into a sections-based operational view.
+  * Sanitize filesystem, RAID, container, and issue slugs used in Home Assistant entities.
+  * Sync the live Home Assistant monitor view from the generated dashboard source of truth.
+  * Declare python3-yaml as a package dependency for dashboard generation.
 
- -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 15:55:00 +0200
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 16:35:00 +0200
 
 mqtt-monitor (1.0.1-2) unstable; urgency=medium
 

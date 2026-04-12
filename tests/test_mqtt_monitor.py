@@ -10,6 +10,7 @@ sys.path.insert(0, "./src")
 
 from mqtt_monitor import Config  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.home_assistant import setup_sensors  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.models import ContainerMetric, FilesystemMetric, HostMetrics, MonitorSnapshot  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.system import (  # pylint: disable=wrong-import-position
     check_package_version,
     disk_cache,
@@ -200,6 +201,24 @@ class TestMqttMonitor:
         assert "homeassistant/sensor/disk_sda_busy_time_percentage/config" in published_topics
         assert "homeassistant/binary_sensor/disk_sda_smart_command_failed/config" in published_topics
         assert "homeassistant/sensor/raid_md0_status/config" in published_topics
+
+    def test_setup_sensors_sanitizes_filesystem_and_container_object_ids(self, setup_monitor):
+        config, _ = setup_monitor
+        client = MagicMock()
+        snapshot = MonitorSnapshot(
+            generated_at="2026-04-12T12:00:00Z",
+            host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+            filesystems=[FilesystemMetric(mount_point="/data/ds3512/acceleration-nextcloud", usage_percentage=1, free_space="9.5T")],
+            disks=[],
+            raids=[],
+            containers=[ContainerMetric(name="acceleration-nextcloud", status="RUNNING", autostart=True)],
+        )
+        setup_sensors(config, client, snapshot=snapshot)
+        published_topics = [call.args[0] for call in client.publish.call_args_list]
+        assert "homeassistant/sensor/server_data_ds3512_acceleration_nextcloud_disk_usage_percentage/config" in published_topics
+        assert "homeassistant/sensor/server_data_ds3512_acceleration-nextcloud_disk_usage_percentage/config" not in published_topics
+        assert "homeassistant/sensor/server_container_acceleration_nextcloud_status/config" in published_topics
+        assert "homeassistant/sensor/server_container_acceleration-nextcloud_status/config" not in published_topics
 
     def test_check_package_version_reads_current_version_from_tuple(self, setup_monitor):
         config, logger = setup_monitor

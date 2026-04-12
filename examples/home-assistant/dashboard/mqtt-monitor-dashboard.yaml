@@ -1,73 +1,174 @@
-title: MQTT Monitor
+title: Server Monitor
 views:
-  - title: Server Monitor
-    path: mqtt-monitor
-    icon: mdi:server
-    cards:
-      - type: entities
-        title: Host Overview
-        show_header_toggle: false
-        entities:
-          - sensor.server_cpu_load_percentage
-          - sensor.server_memory_used_megabytes
-          - sensor.server_cpu_temperature_celsius
-          - sensor.server_active_issue_count
-          - sensor.server_highest_issue_severity
-
-      - type: markdown
-        title: Active Issues
-        content: |
-          {% set issues = state_attr('sensor.server_active_issue_count', 'active_issues') or [] %}
-          {% if issues | count == 0 %}
-          No active issues.
-          {% else %}
-          {% for issue in issues %}
-          - **{{ issue.title }}** ({{ issue.severity }}): {{ issue.description }}
-          {% endfor %}
-          {% endif %}
-
-      - type: entities
-        title: Filesystems
-        show_header_toggle: false
-        entities:
-          - sensor.server_root_disk_usage_percentage
-          - sensor.server_var_log_disk_usage_percentage
-
-      - type: entities
-        title: RAID Arrays
-        show_header_toggle: false
-        entities:
-          - sensor.raid_md0_status
-          - sensor.raid_md1_status
-
-      - type: entities
-        title: LXC Containers
-        show_header_toggle: false
-        entities:
-          - binary_sensor.server_container_web_running
-          - binary_sensor.server_container_mail_running
-          - binary_sensor.server_container_emby_running
-
-      - type: entities
-        title: Disk sda
-        show_header_toggle: false
-        entities:
-          - sensor.disk_sda_smart_health_status
-          - sensor.disk_sda_capacity_gib
-          - sensor.disk_sda_max_temperature
-          - sensor.disk_sda_power_on_hours
-          - sensor.disk_sda_read_kilobytes_per_second
-          - sensor.disk_sda_write_kilobytes_per_second
-          - sensor.disk_sda_busy_time_percentage
-
-      - type: entities
-        title: Disk sdb
-        show_header_toggle: false
-        entities:
-          - sensor.disk_sdb_smart_health_status
-          - sensor.disk_sdb_capacity_gib
-          - sensor.disk_sdb_max_temperature
-          - sensor.disk_sdb_power_on_hours
-          - sensor.disk_sdb_read_kilobytes_per_second
-          - sensor.disk_sdb_write_kilobytes_per_second
-          - sensor.disk_sdb_busy_time_percentage
+- title: Server Monitor
+  path: server-monitor
+  icon: mdi:server-network
+  type: sections
+  max_columns: 3
+  sections:
+  - cards:
+    - type: heading
+      heading: Overview
+      icon: mdi:server-network
+    - type: grid
+      columns: 2
+      square: false
+      cards:
+      - type: tile
+        entity: sensor.mqtt_monitor_active_issue_count
+        name: Active Issues
+        icon: mdi:alert
+      - type: tile
+        entity: sensor.mqtt_monitor_highest_issue_severity
+        name: Highest Severity
+        icon: mdi:alert-circle-outline
+      - type: gauge
+        entity: sensor.mqtt_monitor_cpu_load_percentage
+        name: CPU Load
+        unit: '%'
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 50
+          red: 80
+        needle: true
+        icon: mdi:cpu-64-bit
+      - type: gauge
+        entity: sensor.mqtt_monitor_cpu_temperature_celsius
+        name: CPU Temp
+        unit: C
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 60
+          red: 80
+        needle: true
+        icon: mdi:thermometer
+      - type: tile
+        entity: sensor.mqtt_monitor_memory_used_megabytes
+        name: Memory Used
+        icon: mdi:memory
+    - type: markdown
+      title: Active Issues
+      content: "{% set generated = state_attr('sensor.mqtt_monitor_active_issue_count',\
+        \ 'generated_at') %}\n{% set issues = state_attr('sensor.mqtt_monitor_active_issue_count',\
+        \ 'active_issues') or [] %}\n{% if issues | count == 0 %}\nAll monitored resources\
+        \ are reporting normally.\n{% else %}\n{% for issue in issues %}\n- **{{ issue.title\
+        \ }}** ({{ issue.severity }})\n  {{ issue.description }}\n{% endfor %}\n{%\
+        \ endif %}\n{% if generated %}\n\n_Last update: {{ generated }}_\n{% endif\
+        \ %}"
+  - cards:
+    - type: heading
+      heading: Storage
+      icon: mdi:harddisk
+    - type: grid
+      columns: 2
+      square: false
+      cards:
+      - type: gauge
+        entity: sensor.mqtt_monitor_root_disk_usage_percentage
+        name: Root
+        unit: '%'
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 75
+          red: 90
+        needle: true
+        icon: mdi:harddisk
+      - type: gauge
+        entity: sensor.mqtt_monitor_var_log_disk_usage_percentage
+        name: var/log
+        unit: '%'
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 75
+          red: 90
+        needle: true
+        icon: mdi:harddisk
+      - type: gauge
+        entity: sensor.mqtt_monitor_data_ds3512_acceleration_nextcloud_disk_usage_percentage
+        name: ds3512/acceleration-nextcloud
+        unit: '%'
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 75
+          red: 90
+        needle: true
+        icon: mdi:harddisk
+    - type: grid
+      columns: 2
+      square: false
+      cards:
+      - type: tile
+        entity: sensor.raid_md0_status
+        name: RAID md0
+        icon: mdi:harddisk-plus
+      - type: tile
+        entity: sensor.raid_md1_status
+        name: RAID md1
+        icon: mdi:harddisk-plus
+  - cards:
+    - type: heading
+      heading: Containers
+      icon: mdi:package-variant-closed
+    - type: entities
+      title: LXC Runtime
+      show_header_toggle: false
+      entities:
+      - sensor.mqtt_monitor_container_web_status
+      - sensor.mqtt_monitor_container_mail_status
+      - sensor.mqtt_monitor_container_acceleration_nextcloud_status
+  - cards:
+    - type: heading
+      heading: Physical Disks
+      icon: mdi:harddisk
+    - type: entities
+      title: Disk sda
+      show_header_toggle: false
+      entities:
+      - sensor.disk_sda_capacity_gib
+      - sensor.disk_sda_smart_health_status
+      - sensor.disk_sda_max_temperature
+      - sensor.disk_sda_power_on_hours
+      - sensor.disk_sda_read_kilobytes_per_second
+      - sensor.disk_sda_write_kilobytes_per_second
+      - sensor.disk_sda_busy_time_percentage
+    - type: entities
+      title: Disk nvme0n1
+      show_header_toggle: false
+      entities:
+      - sensor.disk_nvme0n1_capacity_gib
+      - sensor.disk_nvme0n1_smart_health_status
+      - sensor.disk_nvme0n1_max_temperature
+      - sensor.disk_nvme0n1_power_on_hours
+      - sensor.disk_nvme0n1_read_kilobytes_per_second
+      - sensor.disk_nvme0n1_write_kilobytes_per_second
+      - sensor.disk_nvme0n1_busy_time_percentage
+  - cards:
+    - type: heading
+      heading: Logical Volumes
+      icon: mdi:chart-sankey
+    - type: entities
+      title: Disk md1
+      show_header_toggle: false
+      entities:
+      - sensor.disk_md1_capacity_gib
+      - sensor.disk_md1_read_kilobytes_per_second
+      - sensor.disk_md1_write_kilobytes_per_second
+      - sensor.disk_md1_busy_time_percentage
+    - type: entities
+      title: Disk mpatha-part1
+      show_header_toggle: false
+      entities:
+      - sensor.disk_mpatha_part1_capacity_gib
+      - sensor.disk_mpatha_part1_read_kilobytes_per_second
+      - sensor.disk_mpatha_part1_write_kilobytes_per_second
+      - sensor.disk_mpatha_part1_busy_time_percentage
