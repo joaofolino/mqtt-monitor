@@ -106,10 +106,17 @@ Then confirm:
 
 ## Containers Are Missing
 
-Verify that `lxc-ls` works on the monitored host and that:
+V2 now discovers classic-LXC containers through `/usr/share/mqtt-monitor/lxc_inventory_helper.py`, executed through a narrow `sudo` rule.
+
+Verify that:
 
 - `auto_discover_lxc = true`
 - or `expected_lxc_containers` includes the containers you care about
+- the helper runs for the service account:
+
+```bash
+sudo -u mqtt-monitor sudo -n /usr/share/mqtt-monitor/lxc_inventory_helper.py
+```
 
 Autostarted containers are also treated as expected-running resources by V2.
 

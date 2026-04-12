@@ -13,6 +13,8 @@ CONFIG_FILE=$CONFIG_DIR/mqtt-monitor.conf
 CONFIG_OLD=$CONFIG_DIR/mqtt-monitor.conf_old
 CONFIG_NEW=$CONFIG_DIR/mqtt-monitor.conf_new
 PACKAGED_CONFIG=/usr/share/mqtt-monitor/mqtt-monitor.conf
+LXC_HELPER_SUDOERS_SOURCE=/usr/share/mqtt-monitor/mqtt-monitor-lxc-helper.sudoers
+LXC_HELPER_SUDOERS_TARGET=/etc/sudoers.d/mqtt-monitor-lxc-helper
 
 # Create config directory if it doesn't exist
 mkdir -p $CONFIG_DIR
@@ -44,6 +46,15 @@ chmod 660 "$CONFIG_OLD" 2>/dev/null || true
 if [ ! -f /etc/logrotate.d/mqtt-monitor ]; then
     cp /usr/share/mqtt-monitor/mqtt-monitor.logrotate /etc/logrotate.d/mqtt-monitor
     chmod 644 /etc/logrotate.d/mqtt-monitor
+fi
+
+# Install the narrow sudo rule used for privileged LXC inventory discovery
+if [ -f "$LXC_HELPER_SUDOERS_SOURCE" ]; then
+    mkdir -p /etc/sudoers.d
+    install -o root -g root -m 440 "$LXC_HELPER_SUDOERS_SOURCE" "$LXC_HELPER_SUDOERS_TARGET"
+    if command -v visudo >/dev/null 2>&1; then
+        visudo -cf "$LXC_HELPER_SUDOERS_TARGET" >/dev/null
+    fi
 fi
 
 # Create runtime state directory used for issue persistence and generated dashboards

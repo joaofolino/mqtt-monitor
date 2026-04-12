@@ -1,0 +1,1 @@
+mqtt-monitor ALL=(root) NOPASSWD: /usr/share/mqtt-monitor/lxc_inventory_helper.py

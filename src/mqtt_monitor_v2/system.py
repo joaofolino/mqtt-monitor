@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import smtplib
 import subprocess
@@ -17,6 +18,7 @@ from .models import ContainerMetric, DiskMetric, FilesystemMetric, HostMetrics, 
 
 
 disk_cache: dict[str, dict] = {}
+LXC_HELPER_PATH = "/usr/share/mqtt-monitor/lxc_inventory_helper.py"
 
 
 def utc_now_iso() -> str:
@@ -133,7 +135,7 @@ def run_cmd(config, logger, cmd):
             "DEBUG",
         )
         return result.stdout.strip(), result.returncode
-    except (subprocess.SubprocessError, subprocess.TimeoutExpired) as error:
+    except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired) as error:
         stderr = error.stderr if hasattr(error, "stderr") else "N/A"
         log(config, logger, f"Command {' '.join(cmd)} error: {error} (stderr: {stderr})", "ERROR")
         return "", -1
@@ -664,28 +666,97 @@ def parse_lxc_names(command_output: str) -> list[str]:
     return [line.strip() for line in command_output.splitlines() if line.strip()]
 
 
-def discover_lxc_containers(config, logger) -> list[ContainerMetric]:
-    """Discover LXC containers and their runtime state."""
+def parse_lxc_inventory_helper_output(command_output: str) -> dict[str, ContainerMetric] | None:
+    """Parse helper JSON output into container metrics."""
+    if not command_output:
+        return {}
+    try:
+        payload = json.loads(command_output)
+    except json.JSONDecodeError:
+        return None
+
+    raw_containers = payload.get("containers", payload) if isinstance(payload, dict) else payload
+    if not isinstance(raw_containers, list):
+        return None
+
+    containers: dict[str, ContainerMetric] = {}
+    for raw_container in raw_containers:
+        if not isinstance(raw_container, dict):
+            continue
+        name = str(raw_container.get("name", "")).strip()
+        if not name:
+            continue
+        status = str(raw_container.get("status", "UNKNOWN")).strip().upper() or "UNKNOWN"
+        containers[name] = ContainerMetric(
+            name=name,
+            status=status,
+            autostart=bool(raw_container.get("autostart", False)),
+        )
+    return containers
+
+
+def lxc_helper_command() -> list[str]:
+    """Return the command used to execute the privileged LXC helper."""
+    geteuid = getattr(os, "geteuid", lambda: -1)
+    if geteuid() == 0:
+        return [LXC_HELPER_PATH]
+    return ["sudo", "-n", LXC_HELPER_PATH]
+
+
+def discover_lxc_containers_with_helper(config, logger) -> dict[str, ContainerMetric] | None:
+    """Discover LXC containers through the packaged privileged helper."""
+    if not config.auto_discover_lxc or not os.path.exists(LXC_HELPER_PATH):
+        return None
+
+    output, exit_code = run_cmd(config, logger, lxc_helper_command())
+    if exit_code != 0:
+        log(config, logger, "Privileged LXC helper failed; falling back to direct discovery", "WARNING")
+        return None
+
+    containers = parse_lxc_inventory_helper_output(output)
+    if containers is None:
+        log(config, logger, "Privileged LXC helper returned invalid JSON; falling back to direct discovery", "WARNING")
+        return None
+
+    log(config, logger, f"Discovered {len(containers)} LXC containers via privileged helper", "DEBUG")
+    return containers
+
+
+def discover_lxc_containers_with_legacy_commands(config, logger) -> dict[str, ContainerMetric]:
+    """Discover LXC containers using direct classic-LXC commands."""
     discovered_names = []
     if config.auto_discover_lxc:
         output, exit_code = run_cmd(config, logger, ["lxc-ls", "-1"])
         if exit_code == 0 and output:
             discovered_names = parse_lxc_names(output)
-    all_names = unique_preserving_order(list(config.expected_lxc_containers) + discovered_names)
-    if not all_names:
-        return []
 
     running_names = set()
     output, exit_code = run_cmd(config, logger, ["lxc-ls", "-1", "--running"])
     if exit_code == 0 and output:
         running_names = set(parse_lxc_names(output))
 
-    return [
-        ContainerMetric(
+    return {
+        name: ContainerMetric(
             name=name,
             status="RUNNING" if name in running_names else "STOPPED",
             autostart=read_lxc_autostart(name),
         )
+        for name in discovered_names
+    }
+
+
+def discover_lxc_containers(config, logger) -> list[ContainerMetric]:
+    """Discover LXC containers and their runtime state."""
+    discovered_containers = discover_lxc_containers_with_helper(config, logger)
+    if discovered_containers is None:
+        discovered_containers = discover_lxc_containers_with_legacy_commands(config, logger)
+
+    all_names = unique_preserving_order(list(config.expected_lxc_containers) + list(discovered_containers))
+    if not all_names:
+        return []
+
+    return [
+        discovered_containers.get(name, ContainerMetric(name=name, status="STOPPED", autostart=False))
         for name in all_names
     ]
 

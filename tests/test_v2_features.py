@@ -1,6 +1,6 @@
 import sys
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, "/app/src")
 sys.path.insert(0, "./src")
@@ -17,7 +17,7 @@ from mqtt_monitor_v2.models import (  # pylint: disable=wrong-import-position
     MonitorState,
     RaidMetric,
 )
-from mqtt_monitor_v2.system import discover_disk_devices, discover_mount_points  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.system import discover_disk_devices, discover_lxc_containers, discover_mount_points  # pylint: disable=wrong-import-position
 
 
 def test_issue_engine_tracks_new_and_resolved_issues(tmp_path):
@@ -462,3 +462,108 @@ def test_build_dashboard_yaml_sanitizes_container_names(tmp_path):
 
     assert "sensor.server_container_acceleration_nextcloud_status" in dashboard_yaml
     assert "sensor.server_container_acceleration-nextcloud_status" not in dashboard_yaml
+
+
+def test_discover_lxc_containers_uses_privileged_helper_when_available(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=[],
+        raid_arrays=[],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+        auto_discover_lxc=True,
+        expected_lxc_containers=["web", "mail"],
+    )
+    logger = MagicMock()
+    helper_output = """
+    {
+      "containers": [
+        {"name": "web", "status": "RUNNING", "autostart": true},
+        {"name": "torrent", "status": "STOPPED", "autostart": false}
+      ]
+    }
+    """
+
+    with patch("mqtt_monitor_v2.system.os.path.exists", return_value=True), patch(
+        "mqtt_monitor_v2.system.run_cmd",
+        return_value=(helper_output, 0),
+    ) as mock_run_cmd:
+        containers = discover_lxc_containers(config, logger)
+
+    assert [container.name for container in containers] == ["web", "mail", "torrent"]
+    assert containers[0].status == "RUNNING"
+    assert containers[1].status == "STOPPED"
+    assert containers[2].autostart is False
+    assert mock_run_cmd.call_count == 1
+    assert mock_run_cmd.call_args.args[2][-1] == "/usr/share/mqtt-monitor/lxc_inventory_helper.py"
+
+
+def test_discover_lxc_containers_falls_back_to_legacy_commands_without_helper(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=[],
+        raid_arrays=[],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+        auto_discover_lxc=True,
+    )
+    logger = MagicMock()
+
+    with patch("mqtt_monitor_v2.system.os.path.exists", return_value=False), patch(
+        "mqtt_monitor_v2.system.run_cmd",
+        side_effect=[("web\ntorrent", 0), ("web", 0)],
+    ):
+        containers = discover_lxc_containers(config, logger)
+
+    assert [(container.name, container.status) for container in containers] == [
+        ("web", "RUNNING"),
+        ("torrent", "STOPPED"),
+    ]

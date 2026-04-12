@@ -257,3 +257,14 @@ class TestMqttMonitor:
         service_text = open(service_path, "r", encoding="utf-8").read()
         assert "AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text
         assert "CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO" in service_text
+
+    def test_postinst_installs_lxc_helper_sudoers(self):
+        postinst_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "debian", "postinst")
+        postinst_text = open(postinst_path, "r", encoding="utf-8").read()
+        assert "/etc/sudoers.d/mqtt-monitor-lxc-helper" in postinst_text
+        assert "mqtt-monitor-lxc-helper.sudoers" in postinst_text
+
+    def test_package_depends_on_sudo_for_lxc_helper(self):
+        control_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "debian", "control")
+        control_text = open(control_path, "r", encoding="utf-8").read()
+        assert "sudo" in control_text

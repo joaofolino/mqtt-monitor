@@ -5,6 +5,7 @@ if [ "$1" = "purge" ]; then
     echo "Removing mqtt-monitor specific files..."
     rm -f /var/log/mqtt-monitor.log
     rm -rf /etc/mqtt-monitor
+    rm -f /etc/sudoers.d/mqtt-monitor-lxc-helper
 
     # Remove mqtt-monitor user if no other packages need it
     if ! dpkg -l | grep -q mqtt-monitor; then

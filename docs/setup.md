@@ -66,7 +66,7 @@ V2 can auto-discover:
 - disks
 - RAID arrays
 - mount points
-- LXC containers
+- LXC containers through the packaged privileged helper
 
 Good defaults for most hosts are to leave discovery enabled and only pin or ignore the exceptions.
 

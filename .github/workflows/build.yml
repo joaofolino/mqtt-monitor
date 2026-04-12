@@ -21,6 +21,8 @@ jobs:
           mkdir -p mqtt-monitor_deb/{DEBIAN,usr/bin,etc/mqtt-monitor,lib/systemd/system,usr/share/mqtt-monitor}
           cp src/mqtt_monitor.py mqtt-monitor_deb/usr/bin/
           cp src/mqtt-monitor.conf mqtt-monitor_deb/usr/share/mqtt-monitor/
+          cp src/lxc_inventory_helper.py mqtt-monitor_deb/usr/share/mqtt-monitor/
+          cp src/mqtt-monitor-lxc-helper.sudoers mqtt-monitor_deb/usr/share/mqtt-monitor/
           cp src/merge_config.py mqtt-monitor_deb/usr/share/mqtt-monitor/
           cp -r src/mqtt_monitor_v2 mqtt-monitor_deb/usr/share/mqtt-monitor/
           cp debian/mqtt-monitor.service mqtt-monitor_deb/lib/systemd/system/
@@ -33,6 +35,8 @@ jobs:
           cp debian/postrm mqtt-monitor_deb/DEBIAN/
           chmod 755 mqtt-monitor_deb/usr/bin/mqtt_monitor.py
           chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt-monitor.conf
+          chmod 755 mqtt-monitor_deb/usr/share/mqtt-monitor/lxc_inventory_helper.py
+          chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt-monitor-lxc-helper.sudoers
           chmod 644 mqtt-monitor_deb/usr/share/mqtt-monitor/merge_config.py
           find mqtt-monitor_deb/usr/share/mqtt-monitor/mqtt_monitor_v2 -type f -exec chmod 644 {} \;
           chmod 644 mqtt-monitor_deb/lib/systemd/system/mqtt-monitor.service

@@ -81,7 +81,7 @@ It:
 - computes delta-based disk I/O rates
 - discovers disks from `/sys/block`
 - discovers mount points from `psutil.disk_partitions`
-- discovers LXC containers through `lxc-ls`
+- discovers classic-LXC containers through a narrow `sudo` helper that returns JSON inventory
 
 It returns a `MonitorSnapshot` for each loop.
 
@@ -238,8 +238,9 @@ The Debian package now installs:
 - the compatibility entrypoint in `/usr/bin/mqtt_monitor.py`
 - the V2 package directory in `/usr/share/mqtt-monitor/mqtt_monitor_v2`
 - the config template in `/usr/share/mqtt-monitor/mqtt-monitor.conf`
+- the privileged LXC inventory helper in `/usr/share/mqtt-monitor/lxc_inventory_helper.py`
 
-The post-install step also creates `/var/lib/mqtt-monitor` with ownership for the `mqtt-monitor` service user.
+The post-install step also creates `/var/lib/mqtt-monitor` with ownership for the `mqtt-monitor` service user and installs a single-command sudoers rule for the LXC helper.
 
 ## Why This Architecture Matters
 

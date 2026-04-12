@@ -1,4 +1,4 @@
-mqtt-monitor (1.1.0-0rc7) unstable; urgency=medium
+mqtt-monitor (1.1.0-0rc8) unstable; urgency=medium
 
   * Introduce the V2 runtime with inventory discovery for disks, RAID, mounts, and LXC.
   * Add a first-class issue engine with active and resolved transitions.
@@ -14,8 +14,10 @@ mqtt-monitor (1.1.0-0rc7) unstable; urgency=medium
   * Sanitize filesystem, RAID, container, and issue slugs used in Home Assistant entities.
   * Sync the live Home Assistant monitor view from the generated dashboard source of truth.
   * Declare python3-yaml as a package dependency for dashboard generation.
+  * Discover classic-LXC system containers through a narrow privileged helper instead of user-scoped lxc-ls access.
+  * Package the helper, install a single-command sudoers rule, and keep the monitor itself unprivileged.
 
- -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 16:35:00 +0200
+ -- Joao Lino <joao.oliveira.lino@gmail.com> Sun, 12 Apr 2026 17:25:00 +0200
 
 mqtt-monitor (1.0.1-2) unstable; urgency=medium
 
