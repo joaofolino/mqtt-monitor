@@ -1,10 +1,12 @@
 import sys
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, "/app/src")
 sys.path.insert(0, "./src")
 
 from mqtt_monitor import Config  # pylint: disable=wrong-import-position
-from mqtt_monitor_v2.home_assistant import build_dashboard_yaml  # pylint: disable=wrong-import-position
+from mqtt_monitor_v2.home_assistant import build_dashboard_yaml, entity_prefix  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.issues import apply_issue_transitions, evaluate_snapshot_issues  # pylint: disable=wrong-import-position
 from mqtt_monitor_v2.models import (  # pylint: disable=wrong-import-position
     ContainerMetric,
@@ -15,6 +17,7 @@ from mqtt_monitor_v2.models import (  # pylint: disable=wrong-import-position
     MonitorState,
     RaidMetric,
 )
+from mqtt_monitor_v2.system import discover_mount_points  # pylint: disable=wrong-import-position
 
 
 def test_issue_engine_tracks_new_and_resolved_issues(tmp_path):
@@ -191,3 +194,97 @@ def test_build_dashboard_yaml_includes_v2_sections(tmp_path):
     assert "sensor.server_root_disk_usage_percentage" in dashboard_yaml
     assert "binary_sensor.server_container_web_running" in dashboard_yaml
     assert "sensor.disk_sda_capacity_gib" in dashboard_yaml
+
+
+def test_dashboard_entity_prefix_is_sanitized(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="mqtt-monitor",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=["/dev/sda"],
+        raid_arrays=["md0"],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+    )
+    snapshot = MonitorSnapshot(
+        generated_at="2026-04-12T12:00:00Z",
+        host=HostMetrics(cpu_load_percentage=10.0, memory_used_megabytes=512, cpu_temperature_celsius=45.0),
+        filesystems=[FilesystemMetric(mount_point="/", usage_percentage=55, free_space="100G")],
+        disks=[],
+        raids=[],
+        containers=[],
+    )
+
+    dashboard_yaml = build_dashboard_yaml(config, snapshot)
+
+    assert entity_prefix(config) == "mqtt_monitor"
+    assert "sensor.mqtt_monitor_active_issue_count" in dashboard_yaml
+    assert "sensor.mqtt-monitor_active_issue_count" not in dashboard_yaml
+
+
+def test_discover_mount_points_skips_lxc_bind_mounts(tmp_path):
+    config = Config(
+        enable_email=False,
+        log_level="INFO",
+        enable_io_mqtt=True,
+        alert_email="alert@example.com",
+        smtp_server="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_pass="pass",
+        package_version="latest",
+        broker="localhost",
+        port=1883,
+        mqtt_user="test",
+        mqtt_pass="test",
+        self_name="server",
+        smart_interval=3600,
+        topic_prefix="test/mqtt-monitor",
+        log_dir=str(tmp_path),
+        log_file="mqtt-monitor.log",
+        devices=["/dev/sda"],
+        raid_arrays=["md0"],
+        mdstat_path=str(tmp_path / "mdstat"),
+        cpu_temp_path=str(tmp_path / "cpu_temp"),
+        disk_usage_mounts=["/"],
+        max_io_rate=1000000.0,
+        md1_usage_threshold=90.0,
+        md1_write_spike_threshold=10000.0,
+        sleep_interval=60.0,
+        error_sleep=5.0,
+        state_dir=str(tmp_path),
+    )
+
+    partitions = [
+        SimpleNamespace(mountpoint="/", fstype="ext4"),
+        SimpleNamespace(mountpoint="/data", fstype="ext4"),
+        SimpleNamespace(mountpoint="/var/lib/lxc/web/rootfs/data", fstype="ext4"),
+    ]
+    with patch("mqtt_monitor_v2.system.psutil.disk_partitions", return_value=partitions):
+        mounts = discover_mount_points(config)
+
+    assert "/" in mounts
+    assert "/data" in mounts
+    assert "/var/lib/lxc/web/rootfs/data" not in mounts

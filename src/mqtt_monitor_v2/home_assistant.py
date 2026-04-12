@@ -5,16 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 
 import requests
 
 from .issues import active_issues, highest_active_severity, severity_value
 
 
+def entity_prefix(config) -> str:
+    """Return an entity-safe prefix derived from self_name."""
+    prefix = re.sub(r"[^a-z0-9_]+", "_", config.self_name.lower())
+    prefix = re.sub(r"_+", "_", prefix).strip("_")
+    return prefix or "mqtt_monitor"
+
+
 def monitor_device(config) -> dict:
     """Return the shared Home Assistant device payload."""
+    prefix = entity_prefix(config)
     return {
-        "identifiers": [f"{config.self_name}_monitor"],
+        "identifiers": [f"{prefix}_monitor"],
         "name": f"{config.self_name.title()} Monitor",
         "manufacturer": "mqtt-monitor",
         "model": "mqtt-monitor v2",
@@ -48,13 +57,14 @@ def publish_discovery(client, component: str, object_id: str, payload: dict):
 def setup_sensors(config, client, snapshot=None, issues=None):
     """Publish Home Assistant MQTT discovery payloads."""
     device = monitor_device(config)
+    prefix = entity_prefix(config)
     host_sensors = [
         ("cpu_load_percentage", "%", "CPU Load Percentage"),
         ("memory_used_megabytes", "MB", "Memory Used Megabytes"),
         ("cpu_temperature_celsius", "C", "CPU Temperature Celsius"),
     ]
     for suffix, unit, title in host_sensors:
-        object_id = f"{config.self_name}_{suffix}"
+        object_id = f"{prefix}_{suffix}"
         publish_discovery(
             client,
             "sensor",
@@ -62,7 +72,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             {
                 "name": f"{config.self_name.title()} {title}",
                 "object_id": object_id,
-                "unique_id": f"{config.self_name}_monitor_{suffix}",
+                "unique_id": f"{prefix}_monitor_{suffix}",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/host/{suffix}",
                 "unit_of_measurement": unit,
@@ -73,7 +83,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
     if not mounts:
         mounts = [type("FilesystemProxy", (), {"slug": mount.strip("/").replace("/", "_") or "root"}) for mount in config.disk_usage_mounts]
     for mount in mounts:
-        object_id = f"{config.self_name}_{mount.slug}_disk_usage_percentage"
+        object_id = f"{prefix}_{mount.slug}_disk_usage_percentage"
         publish_discovery(
             client,
             "sensor",
@@ -81,7 +91,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             {
                 "name": f"{config.self_name.title()} {mount.slug.replace('_', ' ').title()} Disk Usage Percentage",
                 "object_id": object_id,
-                "unique_id": f"{config.self_name}_monitor_{mount.slug}_disk_usage_percentage",
+                "unique_id": f"{prefix}_monitor_{mount.slug}_disk_usage_percentage",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/host/{mount.slug}_disk_usage_percentage",
                 "unit_of_measurement": "%",
@@ -92,11 +102,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
     publish_discovery(
         client,
         "sensor",
-        f"{config.self_name}_active_issue_count",
+        f"{prefix}_active_issue_count",
         {
             "name": f"{config.self_name.title()} Active Issue Count",
-            "object_id": f"{config.self_name}_active_issue_count",
-            "unique_id": f"{config.self_name}_monitor_active_issue_count",
+            "object_id": f"{prefix}_active_issue_count",
+            "unique_id": f"{prefix}_monitor_active_issue_count",
             "device": device,
             "state_topic": f"{config.topic_prefix}/issues/active_issue_count",
             "json_attributes_topic": f"{config.topic_prefix}/issues/summary",
@@ -106,11 +116,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
     publish_discovery(
         client,
         "sensor",
-        f"{config.self_name}_highest_issue_severity",
+        f"{prefix}_highest_issue_severity",
         {
             "name": f"{config.self_name.title()} Highest Issue Severity",
-            "object_id": f"{config.self_name}_highest_issue_severity",
-            "unique_id": f"{config.self_name}_monitor_highest_issue_severity",
+            "object_id": f"{prefix}_highest_issue_severity",
+            "unique_id": f"{prefix}_monitor_highest_issue_severity",
             "device": device,
             "state_topic": f"{config.topic_prefix}/issues/highest_severity",
             "icon": "mdi:alert-circle-outline",
@@ -139,7 +149,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             payload = {
                 "name": f"Disk {disk_name} {metric_name.replace('_', ' ').title()}",
                 "object_id": f"disk_{disk_name}_{metric_name}",
-                "unique_id": f"{config.self_name}_monitor_disk_{disk_name}_{metric_name}",
+                "unique_id": f"{prefix}_monitor_disk_{disk_name}_{metric_name}",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{metric_name}",
                 "availability_topic": f"{config.topic_prefix}/disk/{disk_name}/availability",
@@ -169,7 +179,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
                 {
                     "name": f"Disk {disk_name} {flag.replace('_', ' ').title()}",
                     "object_id": f"disk_{disk_name}_{flag}",
-                    "unique_id": f"{config.self_name}_monitor_disk_{disk_name}_{flag}",
+                    "unique_id": f"{prefix}_monitor_disk_{disk_name}_{flag}",
                     "device": device,
                     "state_topic": f"{config.topic_prefix}/disk/{disk_name}/{flag}",
                     "payload_on": "true",
@@ -189,7 +199,7 @@ def setup_sensors(config, client, snapshot=None, issues=None):
             {
                 "name": f"RAID {raid_name} Status",
                 "object_id": f"raid_{raid_name}_status",
-                "unique_id": f"{config.self_name}_monitor_raid_{raid_name}_status",
+                "unique_id": f"{prefix}_monitor_raid_{raid_name}_status",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/raid/{raid_name}/status",
                 "json_attributes_topic": f"{config.topic_prefix}/raid/{raid_name}/attributes",
@@ -201,11 +211,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         publish_discovery(
             client,
             "binary_sensor",
-            f"{config.self_name}_container_{container.name}_running",
+            f"{prefix}_container_{container.name}_running",
             {
                 "name": f"Container {container.name} Running",
-                "object_id": f"{config.self_name}_container_{container.name}_running",
-                "unique_id": f"{config.self_name}_monitor_container_{container.name}_running",
+                "object_id": f"{prefix}_container_{container.name}_running",
+                "unique_id": f"{prefix}_monitor_container_{container.name}_running",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/container/{container.name}/running",
                 "payload_on": "true",
@@ -216,11 +226,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         publish_discovery(
             client,
             "sensor",
-            f"{config.self_name}_container_{container.name}_status",
+            f"{prefix}_container_{container.name}_status",
             {
                 "name": f"Container {container.name} Status",
-                "object_id": f"{config.self_name}_container_{container.name}_status",
-                "unique_id": f"{config.self_name}_monitor_container_{container.name}_status",
+                "object_id": f"{prefix}_container_{container.name}_status",
+                "unique_id": f"{prefix}_monitor_container_{container.name}_status",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/container/{container.name}/status",
             },
@@ -230,11 +240,11 @@ def setup_sensors(config, client, snapshot=None, issues=None):
         publish_discovery(
             client,
             "binary_sensor",
-            f"{config.self_name}_issue_{issue.slug}_active",
+            f"{prefix}_issue_{issue.slug}_active",
             {
                 "name": f"{issue.title} Active",
-                "object_id": f"{config.self_name}_issue_{issue.slug}_active",
-                "unique_id": f"{config.self_name}_monitor_issue_{issue.slug}_active",
+                "object_id": f"{prefix}_issue_{issue.slug}_active",
+                "unique_id": f"{prefix}_monitor_issue_{issue.slug}_active",
                 "device": device,
                 "state_topic": f"{config.topic_prefix}/issues/{issue.slug}/active",
                 "payload_on": "true",
@@ -443,7 +453,7 @@ def publish_snapshot(config, logger, client, snapshot, issues):
 
 def build_dashboard_yaml(config, snapshot) -> str:
     """Build a Home Assistant dashboard YAML document."""
-    prefix = config.self_name
+    prefix = entity_prefix(config)
     lines = [
         "title: MQTT Monitor",
         "views:",

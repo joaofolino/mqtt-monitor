@@ -574,12 +574,19 @@ def mount_is_ignored(mount_point: str, ignored_mounts: list[str]) -> bool:
     return False
 
 
+def is_internal_container_mount(mount_point: str) -> bool:
+    """Return whether a mount point is an internal LXC bind mount."""
+    return mount_point.startswith("/var/lib/lxc/")
+
+
 def discover_mount_points(config) -> list[str]:
     """Discover mount points to monitor."""
     mount_points = list(config.disk_usage_mounts)
     if config.auto_discover_mounts:
         for partition in psutil.disk_partitions(all=False):
             if mount_is_ignored(partition.mountpoint, config.ignored_mounts):
+                continue
+            if is_internal_container_mount(partition.mountpoint):
                 continue
             if partition.fstype.lower() in {"tmpfs", "devtmpfs", "squashfs", "overlay"}:
                 continue
